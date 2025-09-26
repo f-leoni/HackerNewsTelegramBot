@@ -13,7 +13,7 @@ import socket
 import subprocess
 import sys
 # datetime non usato direttamente
-from htmldata import get_html
+from webserver.htmldata import get_html
 
 # Configurazione
 
