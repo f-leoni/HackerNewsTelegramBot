@@ -15,25 +15,38 @@ Key features
 
 Quick setup
 
-1. Install dependencies (examples):
+1) Install dependencies (examples):
 
-    ```powershell
-    python -m pip install -r telegram_bot/requirements.txt
-    python -m pip install pyrogram python-dotenv beautifulsoup4 requests
-    ```
+```powershell
+python -m pip install -r telegram_bot/requirements-full.txt
+```
 
-2. Create a `.env` file in the project root (or set environment variables) with your Telegram API credentials:
+2) Create a `.env` file in the project root (or set environment variables) with your Telegram API credentials. You can copy the included example:
 
-    ```ini
-    API_ID=your_api_id
-    API_HASH=your_api_hash
-    ```
+```powershell
+copy .env.example .env
+```
 
-3. Run the bot (it uses a Pyrogram session named `bookmark_bot`):
+Then edit `.env` and fill your credentials:
 
-    ```powershell
-    python telegram_bot/bot.py
-    ```
+```ini
+API_ID=your_api_id
+API_HASH=your_api_hash
+```
+
+3) Run the bot (it uses a Pyrogram session named `bookmark_bot`). You can run directly or use the provided PowerShell helper:
+
+Direct:
+
+```powershell
+python telegram_bot/bot.py
+```
+
+With helper (creates a venv, installs deps and runs):
+
+```powershell
+.\run_bot.ps1
+```
 
 Usage
 
@@ -44,6 +57,3 @@ Notes and troubleshooting
 - The bot expects `API_ID` and `API_HASH` to be set. If missing, the script raises a ValueError.
 - The provided `telegram_bot/requirements.txt` includes some dependencies; you may need to install `pyrogram`, `python-dotenv`, `requests` and `beautifulsoup4` if not already present.
 - The SQLite database file (`bookmarks.db`) is created in the working directory.
-
-If you want, I can also update `telegram_bot/requirements.txt` to include all runtime dependencies (pyrogram, python-dotenv, requests, beautifulsoup4) and add a short troubleshooting section. Tell me if you'd like that.
-

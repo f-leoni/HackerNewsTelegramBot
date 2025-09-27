@@ -1,0 +1,6 @@
+# Full, clean requirements list for the Telegram bookmark bot
+requests
+beautifulsoup4
+pyrogram
+python-dotenv
+oracledb
