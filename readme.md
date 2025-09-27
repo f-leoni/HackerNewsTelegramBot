@@ -57,3 +57,15 @@ Notes and troubleshooting
 - The bot expects `API_ID` and `API_HASH` to be set. If missing, the script raises a ValueError.
 - The provided `telegram_bot/requirements.txt` includes some dependencies; you may need to install `pyrogram`, `python-dotenv`, `requests` and `beautifulsoup4` if not already present.
 - The SQLite database file (`bookmarks.db`) is created in the working directory.
+
+Interactive session creation (auth) issues
+
+- If you see the client prompt "Enter phone number or bot token" when starting and then an error like:
+	"'BadMsgNotification' object has no attribute 'type'", this often means the auth flow was interrupted by the debugger or your system time is out-of-sync.
+- To generate a user session safely, run the included helper from a normal PowerShell terminal:
+
+```powershell
+python telegram_bot/generate_session.py
+```
+
+This script will load API_ID/API_HASH from `.env` and start an interactive login that creates a local `.session` file. If the helper reports the BadMsgNotification error, follow its printed suggestions (sync clock, run outside debugger, update Pyrogram/tgcrypto).

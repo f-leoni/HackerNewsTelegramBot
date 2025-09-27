@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Server HTTPS per servire bookmark da database SQLite - Versione Enhanced
-Con form nascosto e vista compatta
 """
 import os
 import sqlite3
@@ -10,32 +9,17 @@ import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 import socket
-import subprocess
 import sys
 # datetime non usato direttamente
 from htmldata import get_html
 
 # Configurazione
 
-# Percorso Let's Encrypt
-LE_CERT_DIR = '/etc/letsencrypt/live/oc.zitzu.it'
-LE_FULLCHAIN = os.path.join(LE_CERT_DIR, 'fullchain.pem')
-LE_PRIVKEY = os.path.join(LE_CERT_DIR, 'privkey.pem')
-
 # Default
-DB_PATH = 'bookmarks.db'
-CERT_FILE = 'server.pem'
-KEY_FILE = 'server.key'
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(SCRIPT_DIR, '..', 'telegram_bot', 'bookmarks.db')
 PORT = 8443
 
-# Se trovi certificati Let's Encrypt, usali:
-if os.path.exists(LE_FULLCHAIN) and os.path.exists(LE_PRIVKEY):
-    print(f"Usando certificati Let's Encrypt da: {LE_CERT_DIR}")
-    CERT_FILE = LE_FULLCHAIN
-    KEY_FILE = LE_PRIVKEY
-else:
-    print("Let's Encrypt certs non trovati, userò i certificati locali (o li autogenererò).")
-print("SERVER MODULE LOADED: server.py")
 
 class BookmarkHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -51,18 +35,14 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         e invia la risposta HTTP con codice e header appropriati.
         In caso di percorso sconosciuto risponde 404.
         """
-        parsed_path = urlparse(self.path)
+        path = urlparse(self.path).path
 
-        if parsed_path.path == '/':
+        if path == '/':
             self.serve_homepage()
-        elif parsed_path.path == '/api/bookmarks':
+        elif path == '/api/bookmarks':
             self.serve_bookmarks_api()
-        elif parsed_path.path == '/favicon.ico':
-            self.send_response(404)
-            self.end_headers()
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send_error_response(404, "Not Found")
 
     def do_POST(self):
         """
@@ -76,8 +56,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         if self.path == '/api/bookmarks':
             self.add_bookmark()
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send_error_response(404, "Not Found")
 
     def do_PUT(self):
         """
@@ -91,8 +70,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         è un intero risponde 400. Se la route non è riconosciuta risponde 404.
         """
         print(f"DEBUG: do_PUT {self.path}")
-        parsed = urlparse(self.path)
-        parts = parsed.path.strip('/').split('/')
+        parts = urlparse(self.path).path.strip('/').split('/')
 
         # Supporta: /api/bookmarks/<id>  (update)
         # e /api/bookmarks/<id>/read (set read flag)
@@ -100,8 +78,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             try:
                 bookmark_id = int(parts[2])
             except ValueError:
-                self.send_response(400)
-                self.end_headers()
+                self._send_error_response(400, "Invalid bookmark ID")
                 return
 
             if len(parts) == 4 and parts[3] == 'read':
@@ -109,8 +86,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             else:
                 self.update_bookmark(bookmark_id)
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send_error_response(404, "Not Found")
 
     def do_DELETE(self):
         """
@@ -123,22 +99,19 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         In caso di successo chiama delete_bookmark che manda la risposta JSON.
         """
         print(f"DEBUG: do_DELETE {self.path}")
-        parsed = urlparse(self.path)
-        parts = parsed.path.strip('/').split('/')
+        parts = urlparse(self.path).path.strip('/').split('/')
 
         # Supporta: /api/bookmarks/<id>
         if len(parts) == 3 and parts[0] == 'api' and parts[1] == 'bookmarks':
             try:
                 bookmark_id = int(parts[2])
             except ValueError:
-                self.send_response(400)
-                self.end_headers()
+                self._send_error_response(400, "Invalid bookmark ID")
                 return
 
             self.delete_bookmark(bookmark_id)
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send_error_response(404, "Not Found")
 
     def serve_homepage(self):
         """
@@ -160,6 +133,22 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/html; charset=utf-8')
         self.end_headers()
         self.wfile.write(html.encode('utf-8'))
+
+    def _send_json_response(self, status_code, data):
+        """Helper per inviare risposte JSON."""
+        self.send_response(status_code)
+        self.send_header('Content-type', 'application/json; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+
+    def _send_error_response(self, status_code, message):
+        """Helper per inviare risposte di errore in formato JSON."""
+        error_data = {'error': message}
+        self.send_response(status_code)
+        self.send_header('Content-type', 'application/json; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(json.dumps(error_data, ensure_ascii=False).encode('utf-8'))
+
 
     def extract_domain(self, url):
         """
@@ -317,11 +306,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         """
         bookmarks = self.get_bookmarks()
 
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-
-        bookmark_list = []
+        bookmark_list = [] # noqa
         for bookmark in bookmarks:
             bookmark_list.append({
                 'id': bookmark[0],
@@ -337,7 +322,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 'is_read': bookmark[10] if len(bookmark) > 10 else 0
             })
 
-        self.wfile.write(json.dumps(bookmark_list, ensure_ascii=False).encode('utf-8'))
+        self._send_json_response(200, bookmark_list)
 
     def delete_bookmark(self, bookmark_id):
         """
@@ -356,17 +341,10 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             cursor.execute("DELETE FROM bookmarks WHERE id = ?", (bookmark_id,))
             conn.commit()
             conn.close()
-
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(b'{"status": "deleted"}')
+            self._send_json_response(200, {"status": "deleted"})
 
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(f'{{"error": "{str(e)}"}}'.encode('utf-8'))
+            self._send_error_response(500, str(e))
 
     def update_bookmark(self, bookmark_id):
         """
@@ -387,8 +365,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         try:
             content_length = int(self.headers.get('Content-Length', 0))
             if content_length == 0:
-                self.send_response(400)
-                self.end_headers()
+                self._send_error_response(400, "Request body is empty")
                 return
 
             post_data = self.rfile.read(content_length)
@@ -401,8 +378,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                     fields[k] = data[k]
 
             if not fields:
-                self.send_response(400)
-                self.end_headers()
+                self._send_error_response(400, "No valid fields to update")
                 return
 
             # If url changed, update domain automatically
@@ -418,22 +394,12 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             cursor.execute(f"UPDATE bookmarks SET {set_clause} WHERE id = ?", params)
             conn.commit()
             conn.close()
-
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(b'{"status": "updated"}')
+            self._send_json_response(200, {"status": "updated"})
 
         except sqlite3.IntegrityError:
-            self.send_response(409)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(b'{"error": "URL gia\' esistente"}')
+            self._send_error_response(409, "URL already exists")
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(f'{{"error": "{str(e)}"}}'.encode('utf-8'))
+            self._send_error_response(500, str(e))
 
     def mark_read(self, bookmark_id):
         """
@@ -462,17 +428,10 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             cursor.execute("UPDATE bookmarks SET is_read = ? WHERE id = ?", (is_read, bookmark_id))
             conn.commit()
             conn.close()
-
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'status': 'ok', 'is_read': is_read}).encode('utf-8'))
+            self._send_json_response(200, {'status': 'ok', 'is_read': is_read})
 
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(f'{{"error": "{str(e)}"}}'.encode('utf-8'))
+            self._send_error_response(500, str(e))
 
     def add_bookmark(self):
         """
@@ -508,10 +467,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             cursor.execute("SELECT id FROM bookmarks WHERE url = ?", (url,))
             if cursor.fetchone():
                 conn.close()
-                self.send_response(409)  # Conflict
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(b'{"error": "URL gia\' esistente"}')
+                self._send_error_response(409, "URL already exists")
                 return
 
             cursor.execute("""
@@ -530,27 +486,14 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             conn.commit()
             conn.close()
-
-            self.send_response(201)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(b'{"status": "success"}')
+            self._send_json_response(201, {"status": "created"})
 
         except ValueError as e:
-            self.send_response(400)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(f'{{"error": "{str(e)}"}}'.encode('utf-8'))
+            self._send_error_response(400, str(e))
         except sqlite3.IntegrityError:
-            self.send_response(409)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(b'{"error": "URL gia\' esistente"}')
+            self._send_error_response(409, "URL already exists")
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(f'{{"error": "{str(e)}"}}'.encode('utf-8'))
+            self._send_error_response(500, str(e))
 
     def get_bookmarks(self):
         """
@@ -584,96 +527,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             print(f"Errore database: {e}")
             return []
 
-def init_database():
-    """
-    Inizializza il database SQLite.
-
-    Azioni:
-      - crea la tabella `bookmarks` se non esiste
-      - inserisce alcuni esempi se la tabella è vuota
-      - assicura la presenza della colonna `is_read` (migrazione per DB esistenti)
-
-    Questo metodo viene chiamato all'avvio del server per preparare il DB.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    # Crea la tabella bookmark con la nuova struttura
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bookmarks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT UNIQUE NOT NULL,
-            title TEXT,
-            description TEXT,
-            image_url TEXT,
-            domain TEXT,
-            saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            telegram_user_id INTEGER,
-            telegram_message_id INTEGER,
-            comments_url TEXT,
-            is_read INTEGER DEFAULT 0
-        )
-    """)
-
-    # Inserisci alcuni bookmark di esempio se la tabella è vuota
-    cursor.execute("SELECT COUNT(*) FROM bookmarks")
-    if cursor.fetchone()[0] == 0:
-        sample_bookmarks = [
-            {
-                'url': 'https://github.com',
-                'title': 'GitHub',
-                'description': 'Piattaforma per hosting di repository Git',
-                'image_url': 'https://github.com/fluidicon.png',
-                'domain': 'github.com',
-                'comments_url': None,
-                'telegram_user_id': None,
-                'telegram_message_id': None
-            },
-            {
-                'url': 'https://stackoverflow.com',
-                'title': 'Stack Overflow',
-                'description': 'Community di Q&A per programmatori',
-                'image_url': 'https://cdn.sstatic.net/Sites/stackoverflow/Img/apple-touch-icon.png',
-                'domain': 'stackoverflow.com',
-                'comments_url': 'https://news.ycombinator.com/item?id=1',
-                'telegram_user_id': 123456789,
-                'telegram_message_id': 42
-            },
-            {
-                'url': 'https://python.org',
-                'title': 'Python.org',
-                'description': 'Sito ufficiale del linguaggio Python',
-                'image_url': 'https://www.python.org/static/favicon.ico',
-                'domain': 'python.org',
-                'comments_url': 'https://news.ycombinator.com/item?id=2',
-                'telegram_user_id': None,
-                'telegram_message_id': None
-            }
-        ]
-
-        for bookmark in sample_bookmarks:
-            cursor.execute("""
-                INSERT INTO bookmarks (url, title, description, image_url, domain, comments_url, telegram_user_id, telegram_message_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                bookmark['url'], bookmark['title'], bookmark['description'], 
-                bookmark['image_url'], bookmark['domain'], bookmark['comments_url'],
-                bookmark['telegram_user_id'], bookmark['telegram_message_id']
-            ))
-
-    # Assicura che la colonna is_read esista (migrazione semplice per DB esistenti)
-    try:
-        cursor.execute("PRAGMA table_info(bookmarks)")
-        cols = [r[1] for r in cursor.fetchall()]
-        if 'is_read' not in cols:
-            cursor.execute("ALTER TABLE bookmarks ADD COLUMN is_read INTEGER DEFAULT 0")
-    except Exception:
-        pass
-
-    conn.commit()
-    conn.close()
-    print("Database inizializzato con struttura HackerNews: {}".format(DB_PATH))
-
 def create_self_signed_cert():
     """
     Crea un certificato self-signed (se non esiste) usando OpenSSL.
@@ -681,6 +534,8 @@ def create_self_signed_cert():
     Produce due file: KEY_FILE (chiave privata) e CERT_FILE (certificato).
     Se OpenSSL non è disponibile o il comando fallisce l'esecuzione termina.
     """
+    # Questa funzione richiede 'openssl' nel PATH
+    import subprocess
     if os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE):
         print(f"Certificati esistenti trovati: {CERT_FILE}, {KEY_FILE}")
         return
@@ -719,17 +574,42 @@ def main():
 
     Azioni principali:
       - inizializza il DB (init_database)
-      - crea certificato se necessario (create_self_signed_cert)
       - configura HTTPServer e TLS
       - avvia il loop serve_forever
 
+    Nota: la logica di inizializzazione del DB è stata rimossa da qui.
+    Si assume che il bot (o uno script dedicato) gestisca la creazione
+    e la migrazione del database.
+
     Gestisce KeyboardInterrupt per chiudere ordinatamente il server.
     """
-    # Inizializza database
-    init_database()
+    # --- Logica Certificati ---
+    cert_file = os.path.join(SCRIPT_DIR, 'server.pem')
+    key_file = os.path.join(SCRIPT_DIR, 'server.key')
+
+    le_domain = os.getenv('LE_DOMAIN', None)
+    print(f"DEBUG: LE_DOMAIN letto come '{le_domain}'")
+
+    if le_domain:
+        le_cert_dir = f'/etc/letsencrypt/live/{le_domain}'
+        le_fullchain = os.path.join(le_cert_dir, 'fullchain.pem')
+        le_privkey = os.path.join(le_cert_dir, 'privkey.pem')
+
+        if os.path.exists(le_fullchain) and os.path.exists(le_privkey):
+            print(f"Trovati certificati Let's Encrypt: {le_cert_dir}")
+            cert_file = le_fullchain
+            key_file = le_privkey
+        else:
+            print(f"ATTENZIONE: LE_DOMAIN impostato ma certificati non trovati o non leggibili in {le_cert_dir}")
+            print("Verifica i permessi o il percorso. Procedo con certificati locali.")
+    else:
+        print("LE_DOMAIN non impostato. Uso certificati locali.")
 
     # Crea certificato se necessario
-    create_self_signed_cert()
+    if not (os.path.exists(cert_file) and os.path.exists(key_file)):
+        print("Certificati non trovati. Provo a generarli...")
+        create_self_signed_cert(cert_file, key_file)
+
 
     # Configura il server
     server_address = ('', PORT)
@@ -739,7 +619,7 @@ def main():
     try:
         context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
-        context.load_cert_chain(CERT_FILE, KEY_FILE)
+        context.load_cert_chain(cert_file, key_file)
         httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
     except ssl.SSLError as e:
         print(f"❌ Errore SSL: {e}")
@@ -761,7 +641,7 @@ def main():
    • https://{local_ip}:{PORT}
 
 📁 Database: {os.path.abspath(DB_PATH)}
-🔒 Certificato: {os.path.abspath(CERT_FILE)}
+🔒 Certificato: {os.path.abspath(cert_file)}
 
 ✨ NUOVE FUNZIONALITÀ:
    • ➕ Form nascosto (mostra su richiesta)
@@ -781,4 +661,31 @@ Premi Ctrl+C per fermare il server.
         httpd.shutdown()
 
 if __name__ == '__main__':
-    main()
+    # Aggiunge la cartella del bot al path per permettere l'import
+    sys.path.append(os.path.join(SCRIPT_DIR, '..', 'telegram_bot'))
+    try:
+        from bot import BookmarkBot
+
+        # Crea un'istanza "dummy" del bot per usare solo la sua logica di DB.
+        # Sovrascriviamo i metodi che avviano il client per evitare che parta.
+        
+        # Per inizializzare il DB, creiamo un'istanza del bot ma
+        # "neutralizziamo" il suo metodo run() per evitare che avvii il client Telegram.
+        # Questo è un modo per riutilizzare la logica di init_database senza duplicare codice.
+        class DummyBot(BookmarkBot):
+            def run(self):
+                # Sovrascrive il metodo run per non fare nulla
+                pass
+        
+        print("Inizializzazione database usando la logica del bot...")
+        dummy_bot = DummyBot() # Questo chiama __init__ che a sua volta chiama init_database()
+        
+        # Avvia il server
+        main()
+
+    except ImportError:
+        print("ERRORE: Impossibile importare la logica del database dal bot. Assicurati che il DB esista.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERRORE inatteso durante l'avvio: {e}")
+        sys.exit(1)

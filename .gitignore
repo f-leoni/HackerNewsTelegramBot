@@ -15,7 +15,8 @@ server.err
 server.key
 server.log
 server.pem
-test_bot.session
+*.session
+*.bak
 *.pyc
 .vscode/
 __pycache__/

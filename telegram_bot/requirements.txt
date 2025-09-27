@@ -4,5 +4,4 @@ requests
 beautifulsoup4
 pyrogram
 python-dotenv
-oracledb
 ```
