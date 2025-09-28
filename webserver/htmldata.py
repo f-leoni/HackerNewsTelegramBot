@@ -1,4 +1,8 @@
-def get_html(self, bookmarks):
+"""
+Modulo per la generazione dell'HTML della pagina web.
+"""
+__version__ = "1.1"
+def get_html(self, bookmarks, version="N/A"):
     return f"""<!DOCTYPE html>
 <html lang="it">
 <head>
@@ -74,47 +78,6 @@ def get_html(self, bookmarks):
         .icon-btn.delete {{ color: #c82333; }}
         .icon-btn.read {{ color: #28a745; }}
 
-        .btn-toggle.active {{
-            background: #dc3545;
-        }}
-
-        .btn-toggle.active:hover {{
-            background: #c82333;
-        }}
-
-        /* Form nascosto di default */
-        .add-form {{
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 30px;
-            border: 2px dashed #dee2e6;
-            display: none;
-            animation: slideDown 0.3s ease-out;
-        }}
-
-        .add-form.show {{
-            display: block;
-        }}
-
-        @keyframes slideDown {{
-            from {{
-                opacity: 0;
-                transform: translateY(-10px);
-            }}
-            to {{
-                opacity: 1;
-                transform: translateY(0);
-            }}
-        }}
-
-        .form-row {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-bottom: 15px;
-        }}
-
         .form-group {{
             margin-bottom: 15px;
         }}
@@ -169,6 +132,11 @@ def get_html(self, bookmarks):
             flex-wrap: wrap;
         }}
 
+        .add-bookmark-btn {{
+            background: #28a745;
+            color: white;
+        }}
+
         .view-btn > img, .view-btn > svg, .view-btn::before {{
             font-size: 18px;
             line-height: 1;
@@ -190,20 +158,11 @@ def get_html(self, bookmarks):
             cursor: pointer;
             line-height: 1;
             min-height: 36px;
-            min-width: 147px;
+            min-width: 170px;
             white-space: nowrap;
             flex-shrink: 0;
             box-sizing: border-box;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            /* Force a stable button size: fixed flex basis prevents unexpected shrinking */
-            flex: 0 0 147px;
-            width: auto !important;
-        }}
-
-        /* Strong override to ensure buttons are not collapsed by other rules */
-        .view-controls .view-btn {{
-            width: 147px !important;
-            max-width: 147px !important;
         }}
 
         .filter-btn, .btn-toggle {{
@@ -534,6 +493,15 @@ def get_html(self, bookmarks):
             color: white;
         }}
 
+        footer {{
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+            color: #999;
+            font-size: 0.9em;
+        }}
+
         @media (max-width: 768px) {{
             .bookmarks-grid {{
                 grid-template-columns: 1fr;
@@ -556,66 +524,26 @@ def get_html(self, bookmarks):
 </head>
 <body>
     <div class="container">
-        <h1>📚 I Miei Bookmark</h1>
-
-        <!-- Toggle per mostrare form -->
-        <div class="add-toggle">
-            <button class="btn-toggle" onclick="toggleForm()">➕ Aggiungi Bookmark</button>
-        </div>
-
-        <!-- Form nascosto -->
-        <div class="add-form" id="addForm">
-            <h3>Aggiungi Nuovo Bookmark</h3>
-            <form id="bookmarkForm">
-                <div class="form-group">
-                    <label>URL: *</label>
-                    <input type="url" id="url" name="url" required placeholder="https://esempio.com">
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Titolo:</label>
-                        <input type="text" id="title" name="title" placeholder="Titolo del sito">
-                    </div>
-                    <div class="form-group">
-                        <label>URL Immagine:</label>
-                        <input type="url" id="image_url" name="image_url" placeholder="https://esempio.com/image.jpg">
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Descrizione:</label>
-                    <textarea id="description" name="description" placeholder="Descrizione opzionale"></textarea>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>URL HackerNews:</label>
-                        <input type="url" id="comments_url" name="comments_url" placeholder="https://news.ycombinator.com/item?id=...">
-                    </div>
-                    <div class="form-group">
-                        <label>Telegram User ID:</label>
-                        <input type="number" id="telegram_user_id" name="telegram_user_id" placeholder="123456789">
-                    </div>
-                </div>
-
-                <button type="submit" class="btn">Aggiungi Bookmark</button>
-            </form>
-        </div>
+        <h1>📚 Zitzu's Bookmarks Bot</h1>
 
         <input type="text" class="search-box" id="searchBox" placeholder="🔍 Cerca nei bookmark...">
 
         <!-- Controlli vista -->
         <div class="view-controls">
+            <button type="button" class="view-btn add-bookmark-btn" onclick="openAddModal()">
+                ➕ Aggiungi Bookmark
+            </button>
             <button type="button" class="view-btn active" data-view="cards">📋 Vista Cards</button>
             <button type="button" class="view-btn" data-view="compact">📄 Vista Compatta</button>
             <span id="viewStatus" style="margin-left:12px; font-weight:600; color:#333">cards</span>
         </div>
 
+        <!-- Filtri speciali -->
         <div class="special-filters">
             <button class="filter-btn filter-telegram" onclick="filterSpecial('telegram')">📱 Solo Telegram</button>
             <button class="filter-btn filter-hn" onclick="filterSpecial('hn')">🗞️ Con HackerNews</button>
             <button class="filter-btn" onclick="filterSpecial('recent')">🕐 Ultimi 7 giorni</button>
+            <button class="filter-btn" id="hideReadBtn" onclick="toggleHideRead()">🙈 Nascondi Letti</button>
         </div>
 
         <div class="filter-bar" id="filterBar">
@@ -623,7 +551,7 @@ def get_html(self, bookmarks):
         </div>
 
         <div class="stats">
-            <strong>{len(bookmarks)} bookmark totali</strong>
+            <strong id="visibleCount">{len(bookmarks)}</strong> di <strong>{len(bookmarks)} bookmark totali</strong>
         </div>
 
         <!-- Vista normale (cards) -->
@@ -635,25 +563,56 @@ def get_html(self, bookmarks):
         <div class="bookmarks-compact" id="bookmarksCompact">
             {self.render_bookmarks_compact(bookmarks)}
         </div>
+
+        <footer>
+            <p>Zitzu's Bookmarks Bot - v{version}</p>
+        </footer>
+
+        <!-- Modale per la modifica -->
+        <div id="editModal" class="modal">
+            <div class="modal-content">
+                <span class="close-btn" onclick="closeEditModal()">&times;</span>
+                <h3 id="modalTitle">Modifica Bookmark</h3>
+                <form id="editBookmarkForm">
+                    <input type="hidden" id="edit-id" name="id">
+                    <div class="form-group">
+                        <label>URL: *</label>
+                        <input type="url" id="edit-url" name="url" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label>Titolo:</label>
+                            <input type="text" id="edit-title" name="title">
+                        </div>
+                        <div class="form-group">
+                            <label>URL Immagine:</label>
+                            <input type="url" id="edit-image_url" name="image_url">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Descrizione:</label>
+                        <textarea id="edit-description" name="description"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label>URL HackerNews:</label>
+                            <input type="url" id="edit-comments_url" name="comments_url">
+                        </div>
+                        <div class="form-group">
+                            <label>Telegram User ID:</label>
+                            <input type="number" id="edit-telegram_user_id" name="telegram_user_id">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" id="edit-is_read" name="is_read"> Già letto</label>
+                    </div>
+                    <button type="submit" class="btn">Salva Modifiche</button>
+                </form>
+            </div>
+        </div>
     </div>
 
     <script>
-        // Toggle form
-        function toggleForm() {{
-            const form = document.getElementById('addForm');
-            const button = document.querySelector('.btn-toggle');
-
-            if (form.classList.contains('show')) {{
-                form.classList.remove('show');
-                button.textContent = '➕ Aggiungi Bookmark';
-                button.classList.remove('active');
-            }} else {{
-                form.classList.add('show');
-                button.textContent = '❌ Nascondi Form';
-                button.classList.add('active');
-            }}
-        }}
-
         // Switch vista
         function switchView(view) {{
             const cardsView = document.getElementById('bookmarksGrid');
@@ -704,73 +663,84 @@ def get_html(self, bookmarks):
                 }}
             }});
 
+        function updateVisibleCount() {{
+            const activeView = document.querySelector('.view-btn.active').dataset.view;
+            const selector = activeView === 'cards' ? '.bookmark-card' : '.compact-item';
+            const visibleItems = document.querySelectorAll(selector);
+            let count = 0;
+            visibleItems.forEach(item => {{
+                if (window.getComputedStyle(item).display !== 'none') {{
+                    count++;
+                }}
+            }});
+            const countElement = document.getElementById('visibleCount');
+            if (countElement) countElement.textContent = count;
+        }}
+
         // Ricerca in tempo reale
         document.getElementById('searchBox').addEventListener('input', function(e) {{
             const searchTerm = e.target.value.toLowerCase();
+            applyAllFilters();
+        }});
 
-            // Cerca nelle cards
-            const cards = document.querySelectorAll('.bookmark-card');
-            cards.forEach(card => {{
-                const title = (card.querySelector('.bookmark-title')?.textContent || '').toLowerCase();
-                const url = (card.querySelector('.bookmark-url')?.textContent || '').toLowerCase();
-                const description = (card.querySelector('.bookmark-description')?.textContent || '').toLowerCase();
-                const domain = (card.querySelector('.bookmark-domain')?.textContent || '').toLowerCase();
+        // Logica per nascondere i letti (default: true)
+        let hideRead = true;
+        function toggleHideRead() {{
+            hideRead = !hideRead;
+            updateHideReadButton();
+            applyAllFilters();
+        }}
 
-                if (title.includes(searchTerm) || url.includes(searchTerm) || 
-                    description.includes(searchTerm) || domain.includes(searchTerm)) {{
-                    card.style.display = 'block';
-                }} else {{
-                    card.style.display = 'none';
+        function updateHideReadButton() {{
+            const btn = document.getElementById('hideReadBtn');
+            btn.classList.toggle('active', hideRead);
+            btn.textContent = hideRead ? '🙉 Mostra Letti' : '🙈 Nascondi Letti';
+        }}
+
+        function applyAllFilters() {{
+            const searchTerm = document.getElementById('searchBox').value.toLowerCase();
+            const activeView = document.querySelector('.view-btn.active').dataset.view;
+
+            document.querySelectorAll('.bookmark-card, .compact-item').forEach(item => {{
+                // 1. Filtro per vista attiva
+                const isCardViewItem = item.classList.contains('bookmark-card');
+                const isCompactViewItem = item.classList.contains('compact-item');
+                
+                if ((activeView === 'cards' && !isCardViewItem) || (activeView === 'compact' && !isCompactViewItem)) {{
+                    item.style.display = 'none';
+                    return;
                 }}
-            }});
 
-            // Cerca nella vista compatta
-            const compactItems = document.querySelectorAll('.compact-item');
-            compactItems.forEach(item => {{
-                const title = (item.querySelector('.compact-title')?.textContent || '').toLowerCase();
-                const url = (item.querySelector('.compact-url')?.textContent || '').toLowerCase();
-                const domain = (item.querySelector('.compact-domain')?.textContent || '').toLowerCase();
+                // 2. Filtro "Nascondi Letti"
+                const isRead = item.dataset.isRead === '1';
+                if (hideRead && isRead) {{
+                    item.style.display = 'none';
+                    return;
+                }}
 
-                if (title.includes(searchTerm) || url.includes(searchTerm) || domain.includes(searchTerm)) {{
-                    item.style.display = 'grid';
+                // 3. Filtro di ricerca
+                const title = (item.querySelector('.bookmark-title, .compact-title')?.textContent || '').toLowerCase();
+                const url = (item.querySelector('.bookmark-url, .compact-url')?.textContent || '').toLowerCase();
+                const description = (item.querySelector('.bookmark-description')?.textContent || '').toLowerCase();
+                const domain = (item.querySelector('.bookmark-domain, .compact-domain')?.textContent || '').toLowerCase();
+
+                const matchesSearch = title.includes(searchTerm) || url.includes(searchTerm) || description.includes(searchTerm) || domain.includes(searchTerm);
+
+                if (matchesSearch) {{
+                    item.style.display = isCardViewItem ? 'block' : 'grid';
                 }} else {{
                     item.style.display = 'none';
                 }}
             }});
-        }});
+            updateVisibleCount();
+        }}
 
-        // Form submission
-        document.getElementById('bookmarkForm').addEventListener('submit', async function(e) {{
-            e.preventDefault();
+        // Applica il filtro quando si cambia vista
 
-            const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData);
-
-            // Rimuovi campi vuoti
-            Object.keys(data).forEach(key => {{
-                if (data[key] === '') {{
-                    delete data[key];
-                }}
-            }});
-
-            try {{
-                const response = await fetch('/api/bookmarks', {{
-                    method: 'POST',
-                    headers: {{
-                        'Content-Type': 'application/json',
-                    }},
-                    body: JSON.stringify(data)
-                }});
-
-                if (response.ok) {{
-                    location.reload();
-                }} else {{
-                    const error = await response.json();
-                    alert("Errore: " + (error.error || 'Errore sconosciuto'));
-                }}
-            }} catch (error) {{
-                alert("Errore di connessione");
-            }}
+        // Imposta lo stato iniziale al caricamento della pagina
+        document.addEventListener('DOMContentLoaded', function() {{
+            updateHideReadButton();
+            applyAllFilters();
         }});
 
         // Domain filters removed per user request (cleanup)
@@ -826,7 +796,88 @@ def get_html(self, bookmarks):
 
                 item.style.display = show ? 'grid' : 'none';
             }});
+
+            applyAllFilters();
         }}
+
+        // Logica per il modale di modifica
+        const editModal = document.getElementById('editModal');
+        const editForm = document.getElementById('editBookmarkForm');
+
+        function openAddModal() {{
+            editForm.reset();
+            document.getElementById('modalTitle').textContent = 'Aggiungi Nuovo Bookmark';
+            document.getElementById('edit-id').value = ''; // Assicura che l'ID sia vuoto
+            editModal.style.display = 'block';
+        }}
+
+        function openEditModal(bookmark) {{
+            document.getElementById('edit-id').value = bookmark.id;
+            document.getElementById('edit-url').value = bookmark.url || '';
+            document.getElementById('edit-title').value = bookmark.title || '';
+            document.getElementById('edit-image_url').value = bookmark.image_url || '';
+            document.getElementById('edit-description').value = bookmark.description || '';
+            document.getElementById('edit-comments_url').value = bookmark.comments_url || '';
+            document.getElementById('edit-telegram_user_id').value = bookmark.telegram_user_id || '';
+            document.getElementById('edit-is_read').checked = bookmark.is_read == 1;
+            document.getElementById('modalTitle').textContent = 'Modifica Bookmark';
+            editModal.style.display = 'block';
+        }}
+
+        function closeEditModal() {{
+            editModal.style.display = 'none';
+        }}
+
+        window.onclick = function(event) {{
+            if (event.target == editModal) {{
+                closeEditModal();
+            }}
+        }}
+
+        editForm.addEventListener('submit', async function(e) {{
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            const id = data.id;
+
+            const isAdding = !id;
+            const method = isAdding ? 'POST' : 'PUT';
+            const url = isAdding ? '/api/bookmarks' : '/api/bookmarks/' + id;
+
+            // Gestisci checkbox
+            data.is_read = document.getElementById('edit-is_read').checked ? 1 : 0;
+
+            // Rimuovi campi vuoti e l'ID dal corpo della richiesta
+            Object.keys(data).forEach(key => {{
+                if (data[key] === '') {{
+                    delete data[key];
+                }}
+            }});
+            // L'ID non deve mai essere nel body
+            delete data.id;
+            // In modalità aggiunta, non inviare il campo is_read se non è spuntato
+            if (isAdding && !data.is_read) {{
+                delete data.is_read;
+            }}
+
+            try {{
+                const response = await fetch(url, {{
+                    method: method,
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify(data)
+                }});
+
+                if (response.ok) {{
+                    location.reload();
+                }} else {{
+                    const error = await response.json();
+                    alert("Errore: " + (error.error || 'Errore sconosciuto'));
+                }}
+            }} catch (error) {{
+                alert("Errore di connessione");
+            }}
+        }});
+
 
         // API actions: delete and mark read
         async function bookmarkDelete(id) {{
@@ -847,6 +898,59 @@ def get_html(self, bookmarks):
                 alert("Errore di connessione");
             }}
         }}
+
+        // Stili per il modale
+        const modalStyle = `
+            .modal {{
+                display: none;
+                position: fixed;
+                z-index: 1000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                overflow: auto;
+                background-color: rgba(0,0,0,0.5);
+            }}
+            .modal-content {{
+                background-color: #fefefe;
+                margin: 5% auto;
+                padding: 20px;
+                border: 1px solid #888;
+                width: 80%;
+                max-width: 700px;
+                border-radius: 8px;
+                position: relative;
+                animation: slideDown 0.3s ease-out;
+            }}
+            .modal-content .form-row {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 15px;
+            }}
+            .modal-content .form-group input, .modal-content .form-group textarea {{
+                width: 100%;
+                padding: 10px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 14px;
+            }}
+            .close-btn {{
+                color: #aaa;
+                float: right;
+                font-size: 28px;
+                font-weight: bold;
+                cursor: pointer;
+            }}
+            .close-btn:hover, .close-btn:focus {{
+                color: black;
+            }}
+        `;
+        const styleSheet = document.createElement("style");
+        styleSheet.type = "text/css";
+        styleSheet.innerText = modalStyle;
+        document.head.appendChild(styleSheet);
+
     </script>
 </body>
 </html>"""

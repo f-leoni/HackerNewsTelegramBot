@@ -1,3 +1,6 @@
+"""
+Modulo principale del bot Telegram per il salvataggio di bookmark.
+"""
 import os
 import re
 import sqlite3
@@ -5,10 +8,12 @@ import requests
 from bs4 import BeautifulSoup
 from pyrogram import Client, filters
 from datetime import datetime
+from database import init_database, get_db_path
 from urllib.parse import urlparse
 import logging
 
 # Setup logging
+__version__ = "1.0"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -92,54 +97,12 @@ class BookmarkBot:
                 "bookmark_bot", api_id=self.api_id, api_hash=self.api_hash
             )
 
-        # Definisce il percorso del database relativo alla posizione dello script
-        self.script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.db_path = os.path.join(self.script_dir, "bookmarks.db")
-
         # Inizializza database
-        self.init_database()
+        self.conn = init_database()
+        self.db_path = get_db_path()
 
         # Registra handlers
         self.setup_handlers()
-
-    def init_database(self):
-        """Inizializza il database SQLite"""
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        cursor = self.conn.cursor()
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS bookmarks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT UNIQUE NOT NULL,
-                title TEXT,
-                description TEXT,
-                image_url TEXT,
-                domain TEXT,
-                saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                telegram_user_id INTEGER,
-                telegram_message_id INTEGER,
-                comments_url TEXT,
-                is_read INTEGER DEFAULT 0
-            )
-        """)
-
-        # Logica di migrazione: aggiunge colonne mancanti a un DB esistente
-        try:
-            cursor.execute("PRAGMA table_info(bookmarks)")
-            columns = [col[1] for col in cursor.fetchall()]
-            
-            if "telegram_user_id" not in columns:
-                cursor.execute("ALTER TABLE bookmarks ADD COLUMN telegram_user_id INTEGER")
-            if "comments_url" not in columns:
-                cursor.execute("ALTER TABLE bookmarks ADD COLUMN comments_url TEXT")
-            if "is_read" not in columns:
-                cursor.execute("ALTER TABLE bookmarks ADD COLUMN is_read INTEGER DEFAULT 0")
-
-        except Exception as e:
-            logger.warning("Could not perform database migration: %s", e)
-
-        self.conn.commit()
-        logger.info("Database inizializzato: %s", self.db_path)
 
     def extract_urls(self, text):
         """Estrae URL dal testo del messaggio"""

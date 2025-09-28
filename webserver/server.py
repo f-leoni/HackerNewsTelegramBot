@@ -13,6 +13,7 @@ import sys
 # datetime non usato direttamente
 from htmldata import get_html
 
+__version__ = "1.1"
 # Configurazione
 
 # Default
@@ -127,7 +128,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         """
         bookmarks = self.get_bookmarks()
 
-        html = get_html(self, bookmarks)
+        html = get_html(self, bookmarks, __version__)
 
         self.send_response(200)
         self.send_header('Content-type', 'text/html; charset=utf-8')
@@ -203,8 +204,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             if bookmark[9]:  # comments_url (HackerNews)
                 hn_link = f'<a href="{bookmark[9]}" target="_blank" class="hn-link">🗞️ HN</a>'
 
+            # Converte la tupla del bookmark in un dizionario JSON per il pulsante di modifica
+            bookmark_json = json.dumps(dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], bookmark)), ensure_ascii=False)
+
             html_cards.append(f"""
-            <div class="bookmark-card">
+            <div class="bookmark-card" data-is-read="{bookmark[10]}">
                 <div class="bookmark-header">
                     {image_html}
                     <div class="bookmark-info">
@@ -213,6 +217,9 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                             {hn_link}
                             <button class="icon-btn read" title="Segna come letto" onclick="bookmarkMarkRead({bookmark[0]})">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </button>
+                            <button class="icon-btn edit" title="Modifica" onclick='openEditModal({bookmark_json})'>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
                             <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete({bookmark[0]})">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -269,14 +276,20 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             date_parts = bookmark[6].split(' ')
             short_date = date_parts[0] if len(date_parts) > 0 else bookmark[6]
 
+            # Converte la tupla del bookmark in un dizionario JSON per il pulsante di modifica
+            bookmark_json = json.dumps(dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], bookmark)), ensure_ascii=False)
+
             html_items.append(f"""
-            <div class="compact-item">
+            <div class="compact-item" data-is-read="{bookmark[10]}">
                 {image_html}
                 <div class="compact-content">
                     <div class="compact-actions-top">
                         {badges_html}
                         <button class="icon-btn read" title="Segna come letto" onclick="bookmarkMarkRead({bookmark[0]})">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                        <button class="icon-btn edit" title="Modifica" onclick='openEditModal({bookmark_json})'>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
                         <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete({bookmark[0]})">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -371,8 +384,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode('utf-8'))
 
-            fields = {}
-            allowed = ['url', 'title', 'description', 'image_url', 'comments_url', 'telegram_user_id', 'telegram_message_id']
+            fields = {} # noqa
+            allowed = ['url', 'title', 'description', 'image_url', 'comments_url', 'telegram_user_id', 'telegram_message_id', 'is_read']
             for k in allowed:
                 if k in data:
                     fields[k] = data[k]
@@ -591,7 +604,8 @@ def main():
     print(f"DEBUG: LE_DOMAIN letto come '{le_domain}'")
 
     if le_domain:
-        le_cert_dir = f'/etc/letsencrypt/live/{le_domain}'
+        #le_cert_dir = f'/etc/letsencrypt/live/{le_domain}'
+        le_cert_dir = '..'
         le_fullchain = os.path.join(le_cert_dir, 'fullchain.pem')
         le_privkey = os.path.join(le_cert_dir, 'privkey.pem')
 
