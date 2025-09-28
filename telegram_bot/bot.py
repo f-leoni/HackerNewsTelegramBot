@@ -276,13 +276,6 @@ class BookmarkBot:
         # Cerca URL nel messaggio (supporta testo, didascalie e web_page)
         urls = []
 
-        # If message contains an embedded web page, include its url
-        if getattr(message, "web_page", None) and getattr(
-            message.web_page, "url", None
-        ):
-            logger.info("--> Trovato URL in web_page (anteprima link)")
-            urls.append(message.web_page.url)
-
         # Cerca URL nelle entità del messaggio (text or caption)
         entities_source = None
         if getattr(message, "entities", None):
@@ -305,6 +298,14 @@ class BookmarkBot:
                 elif entity.type == MessageEntityType.TEXT_LINK:
                     urls.append(entity.url)
 
+        # Se non abbiamo trovato URL nelle entità, proviamo a prenderlo dall'anteprima web.
+        # Questo evita duplicati quando un link è sia nel testo che nell'anteprima.
+        if not urls and getattr(message, "web_page", None) and getattr(
+            message.web_page, "url", None
+        ):
+            logger.info("--> Nessun URL nelle entità, uso quello da web_page (anteprima link)")
+            urls.append(message.web_page.url)
+
         # Processa ogni URL trovato (rimuovendo duplicati)
         if urls:
             unique_urls = sorted(list(set(urls)))
@@ -313,26 +314,37 @@ class BookmarkBot:
             # Logica per accoppiare link articolo e commenti HN
             hn_url = None
             article_url = None
+            other_urls = []
             
-            if len(unique_urls) == 2:
-                url1, url2 = unique_urls
-                is_url1_hn = "news.ycombinator.com" in urlparse(url1).netloc
-                is_url2_hn = "news.ycombinator.com" in urlparse(url2).netloc
-                
-                if is_url1_hn and not is_url2_hn:
-                    hn_url, article_url = url1, url2
-                elif not is_url1_hn and is_url2_hn:
-                    hn_url, article_url = url2, url1
+            for url in unique_urls:
+                if "news.ycombinator.com" in urlparse(url).netloc:
+                    hn_url = url
+                else:
+                    other_urls.append(url)
+            
+            # Se troviamo esattamente un link HN e un altro link, li trattiamo come una coppia.
+            if hn_url and len(other_urls) == 1:
+                article_url = other_urls[0]
 
             if article_url and hn_url:
                 # Caso speciale: un solo bookmark per la coppia articolo + commenti HN
                 logger.info(f"---> Rilevato pattern Hacker News: Articolo={article_url}, Commenti={hn_url}")
-                metadata = self.get_article_metadata(article_url)
+                # Estrai metadati dall'articolo, ma la descrizione dalla pagina HN
+                article_metadata = self.get_article_metadata(article_url)
+                hn_metadata = self.get_article_metadata(hn_url)
+
+                # Unisci le informazioni: descrizione da HN, il resto dall'articolo
+                metadata = article_metadata
+                if hn_metadata.get("description"):
+                    metadata["description"] = hn_metadata["description"]
+
                 logger.info(f"---> Salvando bookmark singolo nel DB...")
                 success = self.save_bookmark(article_url, metadata, message, comments_url_override=hn_url)
+                # Se il salvataggio va a buon fine, invia la risposta ed esci
+                # per evitare di processare i link singolarmente.
                 if success:
                     await message.reply(f"📖 **Bookmark HN salvato!**\n📰 {metadata['title']}\n🔗 {metadata['domain']}")
-                return # Abbiamo finito, usciamo dalla funzione
+                    return # Abbiamo finito, usciamo dalla funzione
 
             # Logica precedente per tutti gli altri casi (link singoli o multipli non HN)
             saved_count = 0
