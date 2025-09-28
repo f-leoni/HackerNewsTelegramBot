@@ -7,13 +7,13 @@ import sqlite3
 import ssl
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 import socket
 import sys
 # datetime non usato direttamente
 from htmldata import get_html
 
-__version__ = "1.1"
+__version__ = "1.2"
 # Configurazione
 
 # Default
@@ -41,7 +41,12 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         if path == '/':
             self.serve_homepage()
         elif path == '/api/bookmarks':
-            self.serve_bookmarks_api()
+            query_components = parse_qs(urlparse(self.path).query)
+            limit = int(query_components.get("limit", [20])[0]) # noqa
+            offset = int(query_components.get("offset", [0])[0]) # noqa
+            filter_type = query_components.get("filter", [None])[0] # noqa
+            hide_read = query_components.get("hide_read", ['false'])[0].lower() == 'true'
+            self.serve_bookmarks_api(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read)
         else:
             self._send_error_response(404, "Not Found")
 
@@ -126,9 +131,15 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         Nota: il template HTML è generato da `htmldata.get_html` e può
         contenere JS che utilizza le API server-side per operazioni CRUD.
         """
-        bookmarks = self.get_bookmarks()
+        # Carica solo la prima "pagina" di bookmark non filtrati per il rendering iniziale
+        # Per default, nasconde i letti, ma questo può essere sovrascritto dal JS lato client
+        hide_read_default = True
 
-        html = get_html(self, bookmarks, __version__)
+        bookmarks = self.get_bookmarks(limit=20, offset=0, filter_type=None, hide_read=hide_read_default)
+
+        # Il conteggio totale si riferisce sempre a tutti i bookmark nel DB
+        total_count = self.get_total_bookmark_count(filter_type=None, hide_read=False)
+        html = get_html(self, bookmarks, __version__, total_count)
 
         self.send_response(200)
         self.send_header('Content-type', 'text/html; charset=utf-8')
@@ -207,17 +218,27 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             # Converte la tupla del bookmark in un dizionario JSON per il pulsante di modifica
             bookmark_json = json.dumps(dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], bookmark)), ensure_ascii=False)
 
+            # Logica per l'icona e il titolo del pulsante "leggi"
+            is_read = bookmark[10] == 1
+            read_button_title = "Segna come non letto" if is_read else "Segna come letto"
+            read_button_icon = (
+                '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>'
+                if is_read
+                else '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+            )
+
+            # Crea una stringa di ricerca che contiene tutti i dati testuali
+            search_text = f"{bookmark[1] or ''} {bookmark[2] or ''} {bookmark[3] or ''} {bookmark[5] or ''}".lower()
+
             html_cards.append(f"""
-            <div class="bookmark-card" data-is-read="{bookmark[10]}">
+            <div class="bookmark-card" data-id="{bookmark[0]}" data-is-read="{bookmark[10]}" data-search-text="{search_text}">
                 <div class="bookmark-header">
                     {image_html}
                     <div class="bookmark-info">
                         <div class="bookmark-actions-top">
                             {telegram_badge}
                             {hn_link}
-                            <button class="icon-btn read" title="Segna come letto" onclick="bookmarkMarkRead({bookmark[0]})">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            </button>
+                            <button class="icon-btn read" title="{read_button_title}" onclick="bookmarkMarkRead({bookmark[0]})">{read_button_icon}</button>
                             <button class="icon-btn edit" title="Modifica" onclick='openEditModal({bookmark_json})'>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
@@ -279,15 +300,25 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             # Converte la tupla del bookmark in un dizionario JSON per il pulsante di modifica
             bookmark_json = json.dumps(dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], bookmark)), ensure_ascii=False)
 
+            # Logica per l'icona e il titolo del pulsante "leggi"
+            is_read = bookmark[10] == 1
+            read_button_title = "Segna come non letto" if is_read else "Segna come letto"
+            read_button_icon = (
+                '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>'
+                if is_read
+                else '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+            )
+
+            # Crea una stringa di ricerca che contiene tutti i dati testuali
+            search_text = f"{bookmark[1] or ''} {bookmark[2] or ''} {bookmark[3] or ''} {bookmark[5] or ''}".lower()
+
             html_items.append(f"""
-            <div class="compact-item" data-is-read="{bookmark[10]}">
+            <div class="compact-item" data-id="{bookmark[0]}" data-is-read="{bookmark[10]}" data-search-text="{search_text}">
                 {image_html}
                 <div class="compact-content">
                     <div class="compact-actions-top">
                         {badges_html}
-                        <button class="icon-btn read" title="Segna come letto" onclick="bookmarkMarkRead({bookmark[0]})">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                        </button>
+                        <button class="icon-btn read" title="{read_button_title}" onclick="bookmarkMarkRead({bookmark[0]})">{read_button_icon}</button>
                         <button class="icon-btn edit" title="Modifica" onclick='openEditModal({bookmark_json})'>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
@@ -304,7 +335,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         return ''.join(html_items)
 
-    def serve_bookmarks_api(self):
+    def serve_bookmarks_api(self, limit=20, offset=0, filter_type=None, hide_read=False):
         """
         API che restituisce la lista dei bookmark in formato JSON.
 
@@ -317,7 +348,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         image_url, domain, saved_at, telegram_user_id, telegram_message_id,
         comments_url, is_read.
         """
-        bookmarks = self.get_bookmarks()
+        bookmarks = self.get_bookmarks(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read)
 
         bookmark_list = [] # noqa
         for bookmark in bookmarks:
@@ -421,13 +452,13 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         Comportamento:
           - legge opzionalmente JSON dal body con chiave 'is_read' (true/false)
           - se non è fornito, imposta is_read = 1 (letto)
-          - aggiorna il record nel DB e risponde con JSON contenente
-            lo stato risultante: {"status": "ok", "is_read": <0|1>}
+          - aggiorna il record nel DB e risponde con JSON contenente lo stato risultante: {"status": "ok", "is_read": <0|1>}
 
         In caso di errore risponde 500 con il messaggio di errore.
         """
         try:
-            # leggi body se presente
+            # Legge il body della richiesta per determinare lo stato desiderato.
+            # Se il body è assente, l'azione di default è marcare come letto (is_read=1).
             content_length = int(self.headers.get('Content-Length', 0))
             is_read = 1
             if content_length > 0:
@@ -438,7 +469,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
-            cursor.execute("UPDATE bookmarks SET is_read = ? WHERE id = ?", (is_read, bookmark_id))
+            cursor.execute("UPDATE bookmarks SET is_read = ? WHERE id = ?", (int(is_read), bookmark_id))
             conn.commit()
             conn.close()
             self._send_json_response(200, {'status': 'ok', 'is_read': is_read})
@@ -508,7 +539,21 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_error_response(500, str(e))
 
-    def get_bookmarks(self):
+    def get_total_bookmark_count(self, filter_type=None, hide_read=False):
+        """Recupera il numero totale di bookmark dal database."""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            query, params = self._build_query_parts(filter_type, hide_read)
+            cursor.execute(f"SELECT COUNT(*) FROM bookmarks WHERE {query}", params)
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count
+        except sqlite3.Error as e:
+            print(f"Errore database nel conteggio: {e}")
+            return 0
+    
+    def _build_query_parts(self, filter_type=None, hide_read=False):
         """
         Recupera i bookmark dal database e restituisce una lista di tuple.
 
@@ -518,18 +563,41 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         In caso di errore con il DB stampa il messaggio di errore e ritorna lista vuota.
         """
+        where_clauses = ["1=1"]
+        params = []
+
+        if filter_type == 'telegram':
+            where_clauses.append("telegram_user_id IS NOT NULL AND (comments_url IS NULL OR comments_url = '')")
+        elif filter_type == 'hn':
+            where_clauses.append("comments_url IS NOT NULL AND comments_url != ''")
+        elif filter_type == 'recent':
+            where_clauses.append("saved_at >= datetime('now', '-7 days')")
+        
+        if hide_read:
+            where_clauses.append("is_read = 0")
+
+        return " AND ".join(where_clauses), params
+
+    def get_bookmarks(self, limit=20, offset=0, filter_type=None, hide_read=False):
+        """
+        Recupera i bookmark dal database, applicando filtri opzionali.
+        """
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
 
+            where_clause, params = self._build_query_parts(filter_type, hide_read)
+
             cursor.execute("""
-          SELECT id, url, title, description, image_url, domain, 
-              datetime(saved_at, 'localtime') as saved_at,
-              telegram_user_id, telegram_message_id, comments_url,
-              COALESCE(is_read, 0) as is_read
-                FROM bookmarks 
+                SELECT id, url, title, description, image_url, domain, 
+                    datetime(saved_at, 'localtime') as saved_at,
+                    telegram_user_id, telegram_message_id, comments_url,
+                    COALESCE(is_read, 0) as is_read
+                FROM bookmarks
+                WHERE {where_clause}
                 ORDER BY saved_at DESC
-            """)
+                LIMIT ? OFFSET ?
+            """.format(where_clause=where_clause), params + [limit, offset])
 
             bookmarks = cursor.fetchall()
             conn.close()
