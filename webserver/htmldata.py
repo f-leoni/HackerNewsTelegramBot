@@ -1,7 +1,7 @@
 """
 Modulo per la generazione dell'HTML della pagina web.
 """
-__version__ = "1.2"
+#__version__ = "1.2"
 def get_html(self, bookmarks, version="N/A", total_count=0):
     return f"""<!DOCTYPE html>
 <html lang="it">
@@ -511,7 +511,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
 </head>
 <body>
     <div class="container">
-        <h1>📚 Zitzu's Bookmarks Bot</h1>
+        <h1>📚 Zitzu's Bookmarks Bot  - v{version}</h1>
 
         <input type="text" class="search-box" id="searchBox" placeholder="🔍 Cerca nei bookmark...">
 
@@ -710,6 +710,12 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
                 else item.style.display = 'none';
             }});
             updateVisibleCount();
+
+            // Dopo aver filtrato, controlla se è necessario caricare altri bookmark
+            // perché la pagina potrebbe non essere più scrollabile.
+            if (document.body.scrollHeight <= window.innerHeight && !isLoading && !allLoaded) {{
+                loadMoreBookmarks();
+            }}
         }}
 
         // Applica il filtro quando si cambia vista

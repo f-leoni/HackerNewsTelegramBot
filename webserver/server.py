@@ -6,6 +6,7 @@ import os
 import sqlite3
 import ssl
 import json
+import re
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import socket
@@ -13,7 +14,7 @@ import sys
 # datetime non usato direttamente
 from htmldata import get_html
 
-__version__ = "1.2"
+__version__ = "1.3"
 # Configurazione
 
 # Default
@@ -215,8 +216,19 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             if bookmark[9]:  # comments_url (HackerNews)
                 hn_link = f'<a href="{bookmark[9]}" target="_blank" class="hn-link">🗞️ HN</a>'
 
+            # Sanitize for JS: remove newlines from title and description
+            bookmark_list = list(bookmark)
+            if bookmark_list[2]: bookmark_list[2] = re.sub(r'[\r\n\u2028\u2029]', ' ', str(bookmark_list[2]))
+            if bookmark_list[3]: bookmark_list[3] = re.sub(r'[\r\n\u2028\u2029]', ' ', str(bookmark_list[3]))
+            bookmark_safe = tuple(bookmark_list)
+
+            # Crea una stringa di ricerca che contiene tutti i dati testuali
+            search_text = f"{bookmark_safe[1] or ''} {bookmark_safe[2] or ''} {bookmark_safe[3] or ''} {bookmark_safe[5] or ''}".lower()
+            search_text = re.sub(r'[\r\n\u2028\u2029]', ' ', search_text)
+
             # Converte la tupla del bookmark in un dizionario JSON per il pulsante di modifica
-            bookmark_json = json.dumps(dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], bookmark)), ensure_ascii=False)
+            bookmark_json = json.dumps(dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], bookmark_safe)), ensure_ascii=False)
+            bookmark_json_html = bookmark_json.replace('"', '&quot;')
 
             # Logica per l'icona e il titolo del pulsante "leggi"
             is_read = bookmark[10] == 1
@@ -227,35 +239,32 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 else '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
             )
 
-            # Crea una stringa di ricerca che contiene tutti i dati testuali
-            search_text = f"{bookmark[1] or ''} {bookmark[2] or ''} {bookmark[3] or ''} {bookmark[5] or ''}".lower()
-
             html_cards.append(f"""
-            <div class="bookmark-card" data-id="{bookmark[0]}" data-is-read="{bookmark[10]}" data-search-text="{search_text}">
+            <div class="bookmark-card" data-id="{bookmark_safe[0]}" data-is-read="{bookmark_safe[10]}" data-search-text="{search_text}">
                 <div class="bookmark-header">
                     {image_html}
                     <div class="bookmark-info">
                         <div class="bookmark-actions-top">
                             {telegram_badge}
                             {hn_link}
-                            <button class="icon-btn read" title="{read_button_title}" onclick="bookmarkMarkRead({bookmark[0]})">{read_button_icon}</button>
-                            <button class="icon-btn edit" title="Modifica" onclick='openEditModal({bookmark_json})'>
+                            <button class="icon-btn read" title="{read_button_title}" onclick="bookmarkMarkRead({bookmark_safe[0]})">{read_button_icon}</button>
+                            <button class="icon-btn edit" title="Modifica" onclick="openEditModal(({bookmark_json_html}))">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
-                            <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete({bookmark[0]})">
+                            <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete({bookmark_safe[0]})">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
                         </div>
-                        <div class="bookmark-title">{bookmark[2] or 'Senza titolo'}</div>
+                        <div class="bookmark-title">{bookmark_safe[2] or 'Senza titolo'}</div>
                     </div>
                 </div>
 
-                <a href="{bookmark[1]}" target="_blank" class="bookmark-url">{bookmark[1]}</a>
+                <a href="{bookmark_safe[1]}" target="_blank" class="bookmark-url">{bookmark_safe[1]}</a>
 
-                <div class="bookmark-description">{bookmark[3] or 'Nessuna descrizione'}</div>
+                <div class="bookmark-description">{bookmark_safe[3] or 'Nessuna descrizione'}</div>
 
                 <div class="bookmark-footer">
-                    <span class="bookmark-date">{bookmark[6]}</span>
+                    <span class="bookmark-date">{bookmark_safe[6]}</span>
                 </div>
             </div>
             """)
@@ -297,8 +306,19 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             date_parts = bookmark[6].split(' ')
             short_date = date_parts[0] if len(date_parts) > 0 else bookmark[6]
 
+            # Sanitize for JS: remove newlines from title and description
+            bookmark_list = list(bookmark)
+            if bookmark_list[2]: bookmark_list[2] = re.sub(r'[\r\n\u2028\u2029]', ' ', str(bookmark_list[2]))
+            if bookmark_list[3]: bookmark_list[3] = re.sub(r'[\r\n\u2028\u2029]', ' ', str(bookmark_list[3]))
+            bookmark_safe = tuple(bookmark_list)
+
+            # Crea una stringa di ricerca che contiene tutti i dati testuali
+            search_text = f"{bookmark_safe[1] or ''} {bookmark_safe[2] or ''} {bookmark_safe[3] or ''} {bookmark_safe[5] or ''}".lower()
+            search_text = re.sub(r'[\r\n\u2028\u2029]', ' ', search_text)
+
             # Converte la tupla del bookmark in un dizionario JSON per il pulsante di modifica
-            bookmark_json = json.dumps(dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], bookmark)), ensure_ascii=False)
+            bookmark_json = json.dumps(dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], bookmark_safe)), ensure_ascii=False)
+            bookmark_json_html = bookmark_json.replace('"', '&quot;')
 
             # Logica per l'icona e il titolo del pulsante "leggi"
             is_read = bookmark[10] == 1
@@ -309,25 +329,22 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 else '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
             )
 
-            # Crea una stringa di ricerca che contiene tutti i dati testuali
-            search_text = f"{bookmark[1] or ''} {bookmark[2] or ''} {bookmark[3] or ''} {bookmark[5] or ''}".lower()
-
             html_items.append(f"""
-            <div class="compact-item" data-id="{bookmark[0]}" data-is-read="{bookmark[10]}" data-search-text="{search_text}">
+            <div class="compact-item" data-id="{bookmark_safe[0]}" data-is-read="{bookmark_safe[10]}" data-search-text="{search_text}">
                 {image_html}
                 <div class="compact-content">
                     <div class="compact-actions-top">
                         {badges_html}
-                        <button class="icon-btn read" title="{read_button_title}" onclick="bookmarkMarkRead({bookmark[0]})">{read_button_icon}</button>
-                        <button class="icon-btn edit" title="Modifica" onclick='openEditModal({bookmark_json})'>
+                        <button class="icon-btn read" title="{read_button_title}" onclick="bookmarkMarkRead({bookmark_safe[0]})">{read_button_icon}</button>
+                        <button class="icon-btn edit" title="Modifica" onclick="openEditModal(({bookmark_json_html}))">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
-                        <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete({bookmark[0]})">
+                        <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete({bookmark_safe[0]})">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
                     </div>
-                    <div class="compact-title">{bookmark[2] or 'Senza titolo'}</div>
-                    <a href="{bookmark[1]}" target="_blank" class="compact-url">{bookmark[1]}</a>
+                    <div class="compact-title">{bookmark_safe[2] or 'Senza titolo'}</div>
+                    <a href="{bookmark_safe[1]}" target="_blank" class="compact-url">{bookmark_safe[1]}</a>
                 </div>
                 <div class="compact-date">{short_date}</div>
             </div>

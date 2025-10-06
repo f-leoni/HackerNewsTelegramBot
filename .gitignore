@@ -16,6 +16,7 @@ server.key
 server.log
 server.pem
 *.session
+*.session-journal
 *.bak
 *.pyc
 .vscode/

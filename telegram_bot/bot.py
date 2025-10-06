@@ -128,6 +128,27 @@ class BookmarkBot:
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             }
 
+            try:
+                # Esegui una richiesta HEAD per controllare il tipo di contenuto
+                head_response = requests.head(url, headers=headers, timeout=10, allow_redirects=True)
+                head_response.raise_for_status()
+                
+                content_type = head_response.headers.get("Content-Type", "")
+                if "text/html" not in content_type:
+                    logger.info(f"URL {url} non è una pagina HTML (Content-Type: {content_type}). Salto l'analisi.")
+                    return {
+                        "title": f"Link a file ({content_type})",
+                        "description": f"L'URL punta a un file di tipo {content_type} e non a una pagina web.",
+                        "image_url": "",
+                        "domain": urlparse(url).netloc,
+                    }
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 405:
+                    logger.warning(f"HEAD request non permessa per {url}. Procedo con la richiesta GET.")
+                    pass  # Continua con la richiesta GET
+                else:
+                    raise  # Rilancia altre eccezioni HTTP
+
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
 
