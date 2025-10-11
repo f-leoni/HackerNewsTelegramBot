@@ -19,7 +19,7 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from shared.utils import extract_domain
 from htmldata import get_html
 
-__version__ = "1.3.3"
+__version__ = "1.4"
 # Configurazione
 
 # Default
@@ -53,6 +53,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             search_query = query_components.get("search", [None])[0]
             hide_read = query_components.get("hide_read", ['false'])[0].lower() == 'true'
             self.serve_bookmarks_api(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query)
+        elif path.startswith('/static/'):
+            self.serve_static_file()
         else:
             self._send_error_response(404, "Not Found")
 
@@ -167,6 +169,33 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(error_data, ensure_ascii=False).encode('utf-8'))
 
+    def serve_static_file(self):
+        """Serve un file statico dalla cartella 'static'."""
+        try:
+            # Costruisci un percorso sicuro per il file
+            # es. /static/app.js -> webserver/static/app.js
+            static_path = os.path.join(SCRIPT_DIR, self.path.lstrip('/'))
+
+            # Verifica che il percorso risolto sia effettivamente dentro la cartella 'static'
+            # per prevenire attacchi di directory traversal.
+            if not os.path.abspath(static_path).startswith(os.path.join(SCRIPT_DIR, 'static')):
+                self._send_error_response(403, "Forbidden")
+                return
+
+            if os.path.exists(static_path) and os.path.isfile(static_path):
+                content_type = 'application/javascript' if static_path.endswith('.js') else 'text/css'
+                self.send_response(200)
+                self.send_header('Content-type', content_type)
+                self.end_headers()
+                with open(static_path, 'rb') as f:
+                    self.wfile.write(f.read())
+            else:
+                self._send_error_response(404, "Static file not found")
+
+        except Exception as e:
+            print(f"Errore nel servire file statico: {e}")
+            self._send_error_response(500, "Internal Server Error")
+
     def render_bookmarks(self, bookmarks):
         """
         Renderizza i bookmark come HTML nella vista "card" (dettagliata).
@@ -214,7 +243,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             # Converte la tupla del bookmark in un dizionario JSON per il pulsante di modifica
             bookmark_json = json.dumps(dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], bookmark_safe)), ensure_ascii=False)
-            bookmark_json_html = bookmark_json.replace('"', '&quot;')
+            bookmark_json_html = bookmark_json.replace("'", "&#39;").replace('"', '&quot;')
 
             # Logica per l'icona e il titolo del pulsante "leggi"
             is_read = bookmark[10] == 1
@@ -233,11 +262,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                         <div class="bookmark-actions-top">
                             {telegram_badge}
                             {hn_link}
-                            <button class="icon-btn read" title="{read_button_title}" onclick="bookmarkMarkRead({bookmark_safe[0]})">{read_button_icon}</button>
-                            <button class="icon-btn edit" title="Modifica" onclick='openEditModal({bookmark_json_html})'>
+                            <button class="icon-btn read" title="{read_button_title}" data-id="{bookmark_safe[0]}">{read_button_icon}</button>
+                            <button class="icon-btn edit" title="Modifica" data-bookmark='{bookmark_json_html}'>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
-                            <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete({bookmark_safe[0]})">
+                            <button class="icon-btn delete" title="Elimina" data-id="{bookmark_safe[0]}">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
                         </div>
@@ -300,7 +329,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             # Converte la tupla del bookmark in un dizionario JSON per il pulsante di modifica
             bookmark_json = json.dumps(dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], bookmark_safe)), ensure_ascii=False)
-            bookmark_json_html = bookmark_json.replace('"', '&quot;')
+            bookmark_json_html = bookmark_json.replace("'", "&#39;").replace('"', '&quot;')
 
             # Logica per l'icona e il titolo del pulsante "leggi"
             is_read = bookmark[10] == 1
@@ -317,11 +346,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 <div class="compact-content">
                     <div class="compact-actions-top">
                         {badges_html}
-                        <button class="icon-btn read" title="{read_button_title}" onclick="bookmarkMarkRead({bookmark_safe[0]})">{read_button_icon}</button>
-                        <button class="icon-btn edit" title="Modifica" onclick='openEditModal({bookmark_json_html})'>
+                        <button class="icon-btn read" title="{read_button_title}" data-id="{bookmark_safe[0]}">{read_button_icon}</button>
+                        <button class="icon-btn edit" title="Modifica" data-bookmark='{bookmark_json_html}'>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
-                        <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete({bookmark_safe[0]})">
+                        <button class="icon-btn delete" title="Elimina" data-id="{bookmark_safe[0]}">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
                     </div>

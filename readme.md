@@ -1,24 +1,66 @@
-# Telegram Bot
+# Hacker News & Link Bookmark Bot
 
-## Send a Hacker News link to the bot to save it into the bookmarks DB
+A complete bookmarking solution that combines a **Telegram bot** for quickly saving links and a **web interface** to browse, search, and manage your collection.
 
-## English description
+## Features
 
-This repository contains a small Telegram client (a bot-like userbot) that saves web links shared in your Saved Messages into a local SQLite bookmarks database. When you send or forward a Hacker News link (or any other URL) to your Saved Messages, the bot extracts the URL, fetches the page to collect metadata (title, description, image, domain) and stores it in `bookmarks.db`.
+### Telegram Bot
+- **Link Capturing**: Automatically saves links sent to a private chat with the bot or in your "Saved Messages".
+- **Metadata Fetching**: Extracts the title, description, and preview image for each link.
+- **Hacker News Integration**: Intelligently pairs Hacker News comment links with their corresponding articles, saving them as a single bookmark.
+- **SQLite Backend**: Stores all bookmarks in a local, portable SQLite database.
 
-Key features
+### Web Server
+- **Modern Web Interface**: A web-based UI to browse, search, and manage your bookmarks.
+- **Multiple Views**: Choose between a detailed "Card View" and a denser "Compact View".
+- **Powerful Search & Filtering**: Instantly search all your bookmarks by text, or filter by source (Telegram, Hacker News), date, and read status.
+- **Full CRUD Functionality**: Add, edit, and delete bookmarks directly from the web interface.
+- **Infinite Scrolling**: Bookmarks are loaded as you scroll down the page.
+- **HTTPS Support**: Runs a secure server with either Let's Encrypt or self-signed certificates.
 
-- Watches your Saved Messages for URLs (uses a user session via Pyrogram).
-- Extracts page metadata using requests + BeautifulSoup.
-- Stores bookmarks in an SQLite database (`bookmarks.db`).
-- Can export bookmarks as a simple HTML file via the `export_bookmarks_html` helper.
+## Architecture
 
-Quick setup
+The project is divided into three main components:
+- `telegram_bot/`: Contains the logic for the Telegram bot that captures links.
+- `webserver/`: Contains the web server and the front-end user interface.
+- `shared/`: A shared library with database access logic and utility functions used by both components.
 
-1) Install dependencies (examples):
+## Setup and Installation
+
+### 1. Prerequisites
+- Python 3.8+
+- `pip` and `venv`
+
+### 2. Installation
+
+1.  **Clone the repository:**
+    ```sh
+    git clone <YOUR_REPOSITORY_URL>
+    cd HackerNewsTelegramBot
+    ```
+
+2.  **Create and activate a virtual environment:**
+    ```sh
+    python -m venv venv
+    # Windows
+    .\venv\Scripts\Activate.ps1
+    # macOS/Linux
+    source venv/bin/activate
+    ```
+
+3.  **Install dependencies:**
+    The project has dependencies for both the bot and the server. Make sure to install both.
+    ```sh
+    pip install -r telegram_bot/requirements.txt
+    pip install -r webserver/requirements.txt
+    ```
+
+### 3. Configuration
+
+Create a `.env` file in the project's root directory by copying the example:
 
 ```powershell
-python -m pip install -r telegram_bot/requirements-full.txt
+copy .env.example .env
 ```
 
 2) Create a `.env` file in the project root (or set environment variables) with your Telegram API credentials. You can copy the included example:
