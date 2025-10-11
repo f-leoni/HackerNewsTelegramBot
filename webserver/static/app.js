@@ -4,6 +4,7 @@ let allLoaded = false;
 let currentOffset = 0;
 const limit = 20;
 let hideRead = true;
+let visibleCount = 0;
 let activeSpecialFilter = null;
 let searchTimeout;
 
@@ -17,6 +18,24 @@ function escape_html(text) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, '&quot;');
 }
+
+function showToast(message, isError = false) {
+    const toast = document.createElement('div');
+    toast.className = `toast ${isError ? 'error' : ''}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // Force reflow to trigger animation
+    requestAnimationFrame(() => {
+        toast.classList.add('show');
+    });
+
+    setTimeout(() => {
+        toast.classList.remove('show');
+        toast.addEventListener('transitionend', () => toast.remove());
+    }, 3000);
+}
+
 // --- VIEW SWITCHING ---
 function switchView(view) {
     const cardsView = document.getElementById('bookmarksGrid');
@@ -42,6 +61,7 @@ function switchView(view) {
 function triggerSearch() {
     document.getElementById('bookmarksGrid').innerHTML = '';
     document.getElementById('bookmarksCompact').innerHTML = '';
+    visibleCount = 0;
     currentOffset = 0;
     allLoaded = false;
     isLoading = false;
@@ -79,14 +99,7 @@ function updateHideReadButton() {
 }
 
 function updateVisibleCount() {
-    const cardsView = document.getElementById('bookmarksGrid');
-    let count = 0;
-    if (cardsView.style.display !== 'none') {
-        count = document.querySelectorAll('.bookmark-card').length;
-    } else {
-        count = document.querySelectorAll('.compact-item').length;
-    }
-    document.getElementById('visibleCount').textContent = count;
+    document.getElementById('visibleCount').textContent = visibleCount;
 }
 
 // --- DATA LOADING ---
@@ -107,7 +120,7 @@ async function loadMoreBookmarks() {
 
         if (newBookmarks.length === 0) {
             allLoaded = true;
-            loadingIndicator.textContent = currentOffset === 0 ? 'Nessun bookmark trovato.' : 'Tutti i bookmark sono stati caricati.';
+            loadingIndicator.textContent = visibleCount === 0 ? 'Nessun bookmark trovato.' : 'Tutti i bookmark sono stati caricati.';
             if (currentOffset === 0) document.getElementById('visibleCount').textContent = 0;
             return;
         }
@@ -121,6 +134,7 @@ async function loadMoreBookmarks() {
         });
 
         currentOffset += newBookmarks.length;
+        visibleCount += newBookmarks.length;
         updateVisibleCount();
 
     } catch (error) {
@@ -140,6 +154,7 @@ async function loadMoreBookmarks() {
 document.addEventListener('DOMContentLoaded', function() {
     // Set initial state from data passed by the server
     currentOffset = window.APP_CONFIG.initialCount;
+    visibleCount = window.APP_CONFIG.initialCount;
 
     // Restore state from localStorage
     const savedHideRead = localStorage.getItem('hideRead');
@@ -254,14 +269,26 @@ editForm.addEventListener('submit', async function(e) {
             body: JSON.stringify(data)
         });
 
-        if (response.ok) {
-            location.reload();
+        if (response.ok && !isAdding) {
+            const updatedBookmark = await response.json();
+            
+            // Trova e sostituisci la card e l'item compatto esistenti
+            const oldCard = document.querySelector(`.bookmark-card[data-id='${id}']`);
+            if (oldCard) {
+                oldCard.outerHTML = renderBookmarkCard(updatedBookmark);
+            }
+            const oldCompactItem = document.querySelector(`.compact-item[data-id='${id}']`);
+            if (oldCompactItem) {
+                oldCompactItem.outerHTML = renderBookmarkCompactItem(updatedBookmark);
+            }
+            closeEditModal();
+            showToast("Bookmark aggiornato con successo!");
         } else {
             const error = await response.json();
-            alert("Errore: " + (error.error || 'Errore sconosciuto'));
+            showToast("Errore: " + (error.error || 'Errore sconosciuto'), true);
         }
     } catch (error) {
-        alert("Errore di connessione");
+        showToast("Errore di connessione", true);
     }
 });
 
@@ -273,12 +300,14 @@ async function bookmarkDelete(id) {
         if (res.ok) {
             document.querySelector(`.bookmark-card[data-id='${id}']`)?.remove();
             document.querySelector(`.compact-item[data-id='${id}']`)?.remove();
+            visibleCount--;
             updateVisibleCount();
+            showToast("Bookmark eliminato con successo.");
         } else {
-             alert("Errore durante la cancellazione");
+             showToast("Errore durante la cancellazione", true);
         }
     } catch (e) {
-        alert("Errore di connessione");
+        showToast("Errore di connessione", true);
     }
 }
 
@@ -310,14 +339,18 @@ async function bookmarkMarkRead(id) {
                 }
                 if (hideRead && newReadStatus == 1) {
                     el.style.display = 'none';
+                    // Se nascondiamo un elemento, il conteggio visibile diminuisce
+                    if (el.offsetParent !== null) { // Controlla se era visibile prima della modifica
+                        visibleCount--;
+                    }
                 }
             });
             updateVisibleCount();
         } else {
-            alert("Errore durante l'operazione");
+            showToast("Errore durante l'aggiornamento", true);
         }
     } catch (e) {
-        alert("Errore di connessione");
+        showToast("Errore di connessione", true);
     }
 }
 

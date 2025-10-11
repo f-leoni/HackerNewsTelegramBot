@@ -113,7 +113,8 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
     <script>
         // Pass initial data from server to JavaScript
         window.APP_CONFIG = {{
-            'initialCount': {len(bookmarks)}
+            'initialCount': {len(bookmarks)},
+            'totalCount': {total_count}
         }};
     </script>
     <script src="/static/app.js" defer></script>

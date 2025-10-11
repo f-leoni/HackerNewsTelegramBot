@@ -7,10 +7,12 @@ import sqlite3
 import ssl
 import json
 import re
+import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import socket
 import sys
+from contextlib import contextmanager
 
 # Aggiungi la root del progetto al path per importare la libreria condivisa
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -20,12 +22,26 @@ from shared.utils import extract_domain
 from htmldata import get_html
 
 __version__ = "1.4"
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 # Configurazione
 
 # Default
 DB_PATH = os.path.join(SCRIPT_DIR, '..', 'telegram_bot', 'bookmarks.db')
 PORT = 8443
 
+@contextmanager
+def db_connection():
+    """Context manager per gestire le connessioni al database in modo sicuro."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        yield conn.cursor()
+        conn.commit()
+    finally:
+        conn.close()
 
 class BookmarkHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -83,7 +99,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         Il metodo effettua il parsing della path per estrarre l'id. Se l'id non
         è un intero risponde 400. Se la route non è riconosciuta risponde 404.
         """
-        print(f"DEBUG: do_PUT {self.path}")
+        logger.info(f"PUT request for: {self.path}")
         parts = urlparse(self.path).path.strip('/').split('/')
 
         # Supporta: /api/bookmarks/<id>  (update)
@@ -112,7 +128,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         Effettua parsing dell'id dalla path; se non è valido risponde 400.
         In caso di successo chiama delete_bookmark che manda la risposta JSON.
         """
-        print(f"DEBUG: do_DELETE {self.path}")
+        logger.info(f"DELETE request for: {self.path}")
         parts = urlparse(self.path).path.strip('/').split('/')
 
         # Supporta: /api/bookmarks/<id>
@@ -193,7 +209,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 self._send_error_response(404, "Static file not found")
 
         except Exception as e:
-            print(f"Errore nel servire file statico: {e}")
+            logger.error(f"Error serving static file {self.path}: {e}")
             self._send_error_response(500, "Internal Server Error")
 
     def render_bookmarks(self, bookmarks):
@@ -407,15 +423,10 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         Apre una connessione SQLite, esegue DELETE e chiude la connessione.
         """
         try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-
-            cursor.execute("DELETE FROM bookmarks WHERE id = ?", (bookmark_id,))
-            conn.commit()
-            conn.close()
+            with db_connection() as cursor:
+                cursor.execute("DELETE FROM bookmarks WHERE id = ?", (bookmark_id,))
             self._send_json_response(200, {"status": "deleted"})
-
-        except Exception as e:
+        except sqlite3.Error as e:
             self._send_error_response(500, str(e))
 
     def update_bookmark(self, bookmark_id):
@@ -461,17 +472,30 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             params = list(fields.values())
             params.append(bookmark_id)
 
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute(f"UPDATE bookmarks SET {set_clause} WHERE id = ?", params)
-            conn.commit()
-            conn.close()
-            self._send_json_response(200, {"status": "updated"})
+            with db_connection() as cursor:
+                cursor.execute(f"UPDATE bookmarks SET {set_clause} WHERE id = ?", params)
 
+                # Dopo l'aggiornamento, recupera il bookmark aggiornato per restituirlo
+                cursor.execute("""
+                    SELECT id, url, title, description, image_url, domain,
+                        datetime(saved_at, 'localtime') as saved_at,
+                        telegram_user_id, telegram_message_id, comments_url,
+                        COALESCE(is_read, 0) as is_read
+                    FROM bookmarks WHERE id = ?
+                """, (bookmark_id,))
+                updated_bookmark_tuple = cursor.fetchone()
+
+            if not updated_bookmark_tuple:
+                self._send_error_response(404, "Bookmark not found after update")
+                return
+
+            updated_bookmark = dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], updated_bookmark_tuple))
+            self._send_json_response(200, updated_bookmark)
         except sqlite3.IntegrityError:
             self._send_error_response(409, "URL already exists")
         except Exception as e:
-            self._send_error_response(500, str(e))
+            logger.error(f"Error updating bookmark {bookmark_id}: {e}")
+            self._send_error_response(500, "An internal error occurred")
 
     def mark_read(self, bookmark_id):
         """
@@ -495,14 +519,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 if 'is_read' in data:
                     is_read = 1 if data.get('is_read') else 0
 
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("UPDATE bookmarks SET is_read = ? WHERE id = ?", (int(is_read), bookmark_id))
-            conn.commit()
-            conn.close()
+            with db_connection() as cursor:
+                cursor.execute("UPDATE bookmarks SET is_read = ? WHERE id = ?", (int(is_read), bookmark_id))
             self._send_json_response(200, {'status': 'ok', 'is_read': is_read})
 
-        except Exception as e:
+        except sqlite3.Error as e:
             self._send_error_response(500, str(e))
 
     def add_bookmark(self):
@@ -532,32 +553,27 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             # Estrai dominio automaticamente
             domain = extract_domain(url)
 
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
+            with db_connection() as cursor:
+                # Verifica se URL già existe (UNIQUE constraint)
+                cursor.execute("SELECT id FROM bookmarks WHERE url = ?", (url,))
+                if cursor.fetchone():
+                    self._send_error_response(409, "URL already exists")
+                    return
 
-            # Verifica se URL già existe (UNIQUE constraint)
-            cursor.execute("SELECT id FROM bookmarks WHERE url = ?", (url,))
-            if cursor.fetchone():
-                conn.close()
-                self._send_error_response(409, "URL already exists")
-                return
+                cursor.execute("""
+                    INSERT INTO bookmarks (url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    url,
+                    data.get('title'),
+                    data.get('description'),
+                    data.get('image_url'),
+                    domain,
+                    data.get('telegram_user_id') if data.get('telegram_user_id') else None,
+                    data.get('telegram_message_id') if data.get('telegram_message_id') else None,
+                    data.get('comments_url')
+                ))
 
-            cursor.execute("""
-                INSERT INTO bookmarks (url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                url,
-                data.get('title'),
-                data.get('description'),
-                data.get('image_url'),
-                domain,
-                data.get('telegram_user_id') if data.get('telegram_user_id') else None,
-                data.get('telegram_message_id') if data.get('telegram_message_id') else None,
-                data.get('comments_url')
-            ))
-
-            conn.commit()
-            conn.close()
             self._send_json_response(201, {"status": "created"})
 
         except ValueError as e:
@@ -565,26 +581,24 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         except sqlite3.IntegrityError:
             self._send_error_response(409, "URL already exists")
         except Exception as e:
-            self._send_error_response(500, str(e))
+            logger.error(f"Error adding bookmark: {e}")
+            self._send_error_response(500, "An internal error occurred")
 
     def get_total_bookmark_count(self, filter_type=None, hide_read=False):
         """Recupera il numero totale di bookmark dal database."""
         try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            query, params = self._build_query_parts(filter_type, hide_read)
-            cursor.execute(f"SELECT COUNT(*) FROM bookmarks WHERE {query}", params)
-            count = cursor.fetchone()[0]
-            conn.close()
+            with db_connection() as cursor:
+                query, params = self._build_query_parts(filter_type, hide_read)
+                cursor.execute(f"SELECT COUNT(*) FROM bookmarks WHERE {query}", params)
+                count = cursor.fetchone()[0]
             return count
         except sqlite3.Error as e:
-            print(f"Errore database nel conteggio: {e}")
+            logger.error(f"Database error during count: {e}")
             return 0
 
     def _build_query_parts(self, filter_type=None, hide_read=False, search_query=None):
         """
         Costruisce le clausole WHERE e i parametri per le query dei bookmark.
-
         Args:
             filter_type (str, optional): Filtro per 'telegram', 'hn', 'recent'.
             hide_read (bool, optional): Se True, esclude i bookmark letti.
@@ -617,29 +631,25 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         Recupera i bookmark dal database, applicando filtri e ricerca opzionali.
         """
         try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
+            with db_connection() as cursor:
+                where_clause, params = self._build_query_parts(filter_type, hide_read, search_query)
 
-            where_clause, params = self._build_query_parts(filter_type, hide_read, search_query)
+                cursor.execute("""
+                    SELECT id, url, title, description, image_url, domain,
+                        datetime(saved_at, 'localtime') as saved_at,
+                        telegram_user_id, telegram_message_id, comments_url,
+                        COALESCE(is_read, 0) as is_read
+                    FROM bookmarks
+                    WHERE {where_clause}
+                    ORDER BY saved_at DESC
+                    LIMIT ? OFFSET ?
+                """.format(where_clause=where_clause), params + [limit, offset])
 
-            cursor.execute("""
-                SELECT id, url, title, description, image_url, domain,
-                    datetime(saved_at, 'localtime') as saved_at,
-                    telegram_user_id, telegram_message_id, comments_url,
-                    COALESCE(is_read, 0) as is_read
-                FROM bookmarks
-                WHERE {where_clause}
-                ORDER BY saved_at DESC
-                LIMIT ? OFFSET ?
-            """.format(where_clause=where_clause), params + [limit, offset])
-
-            bookmarks = cursor.fetchall()
-            conn.close()
-
+                bookmarks = cursor.fetchall()
             return bookmarks
 
         except sqlite3.Error as e:
-            print(f"Errore database: {e}")
+            logger.error(f"Database error fetching bookmarks: {e}")
             return []
 
 def create_self_signed_cert():
@@ -651,11 +661,11 @@ def create_self_signed_cert():
     """
     # Questa funzione richiede 'openssl' nel PATH
     import subprocess
-    if os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE):
-        print(f"Certificati esistenti trovati: {CERT_FILE}, {KEY_FILE}")
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        logger.info(f"Certificati esistenti trovati: {cert_file}, {key_file}")
         return
 
-    print("Creazione certificato self-signed con chiave RSA 2048-bit...")
+    logger.info("Creazione certificato self-signed con chiave RSA 2048-bit...")
 
     try:
         # Prima genera la chiave privata RSA 2048-bit
@@ -673,13 +683,13 @@ def create_self_signed_cert():
             '-days', '365',
             '-subj', '/C=IT/ST=Italy/L=Rome/O=LocalServer/CN=localhost'
         ], check=True, capture_output=True)
-        print("✅ Certificato creato con successo!")
+        logger.info("✅ Certificato creato con successo!")
 
     except subprocess.CalledProcessError as e:
-        print(f"❌ Errore nella creazione del certificato: {e}")
+        logger.error(f"❌ Errore nella creazione del certificato: {e}")
         sys.exit(1)
     except FileNotFoundError:
-        print("❌ OpenSSL non trovato nel PATH del sistema")
+        logger.error("❌ OpenSSL non trovato nel PATH del sistema")
         sys.exit(1)
 
 def main():
@@ -698,7 +708,7 @@ def main():
     key_file = os.path.join(SCRIPT_DIR, 'server.key')
 
     le_domain = os.getenv('LE_DOMAIN', None)
-    print(f"DEBUG: LE_DOMAIN letto come '{le_domain}'")
+    logger.info(f"LE_DOMAIN letto come '{le_domain}'")
 
     if le_domain:
         #le_cert_dir = f'/etc/letsencrypt/live/{le_domain}'
@@ -707,14 +717,14 @@ def main():
         le_privkey = os.path.join(le_cert_dir, 'privkey.pem')
 
         if os.path.exists(le_fullchain) and os.path.exists(le_privkey):
-            print(f"Trovati certificati Let's Encrypt: {le_cert_dir}")
+            logger.info(f"Trovati certificati Let's Encrypt: {le_cert_dir}")
             cert_file = le_fullchain
             key_file = le_privkey
         else:
-            print(f"ATTENZIONE: LE_DOMAIN impostato ma certificati non trovati o non leggibili in {le_cert_dir}")
-            print("Verifica i permessi o il percorso. Procedo con certificati locali.")
+            logger.warning(f"LE_DOMAIN impostato ma certificati non trovati o non leggibili in {le_cert_dir}")
+            logger.warning("Verifica i permessi o il percorso. Procedo con certificati locali.")
     else:
-        print("LE_DOMAIN non impostato. Uso certificati locali.")
+        logger.info("LE_DOMAIN non impostato. Uso certificati locali.")
 
     # Crea certificato se necessario
     if not (os.path.exists(cert_file) and os.path.exists(key_file)):
@@ -733,7 +743,7 @@ def main():
         context.load_cert_chain(cert_file, key_file)
         httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
     except ssl.SSLError as e:
-        print(f"❌ Errore SSL: {e}")
+        logger.error(f"❌ Errore SSL: {e}")
         return
 
     # Ottieni l'IP locale
@@ -743,7 +753,7 @@ def main():
     except Exception:
         local_ip = "IP_NON_DISPONIBILE"
 
-    print(f"""
+    logger.info(f"""
 🚀 Server HTTPS avviato!
 
 📍 Accedi da:
@@ -768,7 +778,7 @@ Premi Ctrl+C per fermare il server.
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\n🛑 Server fermato correttamente")
+        logger.info("\n🛑 Server fermato correttamente")
         httpd.shutdown()
 
 if __name__ == '__main__':
@@ -777,15 +787,15 @@ if __name__ == '__main__':
     try:
         # Importa direttamente la funzione di inizializzazione del DB
         from shared.database import init_database
-        print("Inizializzazione database...")
+        logger.info("Inizializzazione database...")
         init_database()
         
         # Avvia il server
         main()
 
     except ImportError:
-        print("ERRORE: Impossibile importare la logica del database dal bot. Assicurati che il DB esista.")
+        logger.error("ERRORE: Impossibile importare la logica del database. Assicurati che la struttura del progetto sia corretta.")
         sys.exit(1)
     except Exception as e:
-        print(f"ERRORE inatteso durante l'avvio: {e}")
+        logger.critical(f"ERRORE inatteso durante l'avvio: {e}")
         sys.exit(1)
