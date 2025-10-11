@@ -14,7 +14,7 @@ import sys
 # datetime non usato direttamente
 from htmldata import get_html
 
-__version__ = "1.3"
+__version__ = "1.3.2"
 # Configurazione
 
 # Default
@@ -161,7 +161,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'application/json; charset=utf-8')
         self.end_headers()
         self.wfile.write(json.dumps(error_data, ensure_ascii=False).encode('utf-8'))
-
 
     def extract_domain(self, url):
         """
@@ -569,7 +568,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         except sqlite3.Error as e:
             print(f"Errore database nel conteggio: {e}")
             return 0
-    
+
     def _build_query_parts(self, filter_type=None, hide_read=False):
         """
         Recupera i bookmark dal database e restituisce una lista di tuple.
@@ -665,7 +664,6 @@ def create_self_signed_cert():
         print("❌ OpenSSL non trovato nel PATH del sistema")
         sys.exit(1)
 
-
 def main():
     """
     Entry-point principale che avvia il server HTTPS.
@@ -674,10 +672,6 @@ def main():
       - inizializza il DB (init_database)
       - configura HTTPServer e TLS
       - avvia il loop serve_forever
-
-    Nota: la logica di inizializzazione del DB è stata rimossa da qui.
-    Si assume che il bot (o uno script dedicato) gestisca la creazione
-    e la migrazione del database.
 
     Gestisce KeyboardInterrupt per chiudere ordinatamente il server.
     """
@@ -735,7 +729,7 @@ def main():
 🚀 Server HTTPS avviato!
 
 📍 Accedi da:
-   • https://localhost:{PORT}
+   • https://oc.zitzu.it:{PORT}
    • https://127.0.0.1:{PORT}
    • https://{local_ip}:{PORT}
 
@@ -767,7 +761,7 @@ if __name__ == '__main__':
 
         # Crea un'istanza "dummy" del bot per usare solo la sua logica di DB.
         # Sovrascriviamo i metodi che avviano il client per evitare che parta.
-        
+
         # Per inizializzare il DB, creiamo un'istanza del bot ma
         # "neutralizziamo" il suo metodo run() per evitare che avvii il client Telegram.
         # Questo è un modo per riutilizzare la logica di init_database senza duplicare codice.
@@ -775,10 +769,10 @@ if __name__ == '__main__':
             def run(self):
                 # Sovrascrive il metodo run per non fare nulla
                 pass
-        
+
         print("Inizializzazione database usando la logica del bot...")
         dummy_bot = DummyBot() # Questo chiama __init__ che a sua volta chiama init_database()
-        
+
         # Avvia il server
         main()
 
