@@ -1,8 +1,15 @@
 """
 Modulo per la generazione dell'HTML della pagina web.
 """
-#__version__ = "1.2"
-def get_html(self, bookmarks, version="N/A", total_count=0):
+def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
+    # Funzione di escape per l'HTML per evitare problemi con le virgolette nei dati
+    def escape_html(text):
+        if text is None:
+            return ""
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
+
+    search_value = escape_html(search_query)
+
     return f"""<!DOCTYPE html>
 <html lang="it">
 <head>
@@ -513,7 +520,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
     <div class="container">
         <h1>📚 Zitzu's Bookmarks Bot  - v{version}</h1>
 
-        <input type="text" class="search-box" id="searchBox" placeholder="🔍 Cerca nei bookmark...">
+        <input type="text" class="search-box" id="searchBox" placeholder="🔍 Cerca nei bookmark..." value="{search_value}">
 
         <!-- Controlli vista -->
         <div class="view-controls">
@@ -602,15 +609,32 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
     </div>
 
     <script>
-        // Switch vista
+        // --- STATE ---
+        let isLoading = false;
+        let allLoaded = false;
+        let currentOffset = {len(bookmarks)};
+        const limit = 20;
+        let hideRead = true;
+        let activeSpecialFilter = null;
+        let searchTimeout;
+
+        function escape_html(text) {{
+            if (text === null || text === undefined) {{
+                return "";
+            }}
+            return String(text)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, '&quot;');
+        }}
+        // --- VIEW SWITCHING ---
         function switchView(view) {{
             const cardsView = document.getElementById('bookmarksGrid');
             const compactView = document.getElementById('bookmarksCompact');
-            const buttons = document.querySelectorAll('.view-btn');
+            const buttons = document.querySelectorAll('.view-btn[data-view]');
 
             buttons.forEach(btn => btn.classList.remove('active'));
-
-            // Find button matching view
             const activeBtn = document.querySelector(`.view-btn[data-view="${{view}}"]`);
             if (activeBtn) activeBtn.classList.add('active');
 
@@ -621,65 +645,42 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
                 cardsView.style.display = 'none';
                 compactView.classList.add('show');
             }}
-
-            const status = document.getElementById('viewStatus');
-            if (status) status.textContent = view;
-
-            // Riapplica tutti i filtri alla nuova vista
-            applyAllFilters();
+            document.getElementById('viewStatus').textContent = view;
+            updateVisibleCount();
         }}
 
-        // Imposta lo stato iniziale e aggiunge gli event listener al caricamento della pagina
-        document.addEventListener('DOMContentLoaded', function() {{
-            // Ripristina lo stato del filtro 'hideRead' dal localStorage
-            const savedHideRead = localStorage.getItem('hideRead');
-            hideRead = savedHideRead !== null ? JSON.parse(savedHideRead) : true;
-
-            updateHideReadButton();
-            applyAllFilters();
-
-            // Aggiunge i listener per i pulsanti di cambio vista
-            document.querySelectorAll('.view-btn[data-view]').forEach(btn => {{
-                btn.addEventListener('click', () => {{
-                    switchView(btn.dataset.view);
-                }});
-            }});
-        }});
-
-        function updateVisibleCount() {{
-            const activeView = document.querySelector('.view-btn.active').dataset.view;
-            const selector = activeView === 'cards' ? '.bookmark-card' : '.compact-item';
-            const visibleItems = document.querySelectorAll(selector);
-            let count = 0;
-            visibleItems.forEach(item => {{
-                if (window.getComputedStyle(item).display !== 'none') {{
-                    count++;
-                }}
-            }});
-            const countElement = document.getElementById('visibleCount');
-            if (countElement) countElement.textContent = count;
-        }}
-
-        // Ricerca in tempo reale
-        document.getElementById('searchBox').addEventListener('input', function(e) {{
-            applyAllFilters();
-        }});
-
-        // Logica per nascondere i letti (default: true)
-        let hideRead = true;
-        function toggleHideRead() {{
-            hideRead = !hideRead;
-            localStorage.setItem('hideRead', hideRead); // Salva lo stato
-            updateHideReadButton();
-
-            // Svuota i contenitori e ricarica i dati dal server con il nuovo stato di hideRead
+        // --- FILTERS & SEARCH ---
+        function triggerSearch() {{
             document.getElementById('bookmarksGrid').innerHTML = '';
             document.getElementById('bookmarksCompact').innerHTML = '';
             currentOffset = 0;
             allLoaded = false;
             isLoading = false;
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            loadingIndicator.textContent = 'Caricamento...';
+            loadingIndicator.style.display = 'none';
             
             loadMoreBookmarks();
+        }}
+
+        function filterSpecial(type, event) {{
+            const clickedButton = event.target;
+            if (clickedButton.classList.contains('active')) {{
+                activeSpecialFilter = null;
+                clickedButton.classList.remove('active');
+            }} else {{
+                document.querySelectorAll('.special-filters .filter-btn').forEach(btn => btn.classList.remove('active'));
+                clickedButton.classList.add('active');
+                activeSpecialFilter = type;
+            }}
+            triggerSearch();
+        }}
+
+        function toggleHideRead() {{
+            hideRead = !hideRead;
+            localStorage.setItem('hideRead', hideRead);
+            updateHideReadButton();
+            triggerSearch();
         }}
 
         function updateHideReadButton() {{
@@ -688,81 +689,108 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
             btn.textContent = hideRead ? '🙉 Mostra Letti' : '🙈 Nascondi Letti';
         }}
 
-        function applyAllFilters() {{
-            // Questa funzione ora gestisce solo la ricerca e il cambio di vista,
-            // perché il filtro "hideRead" è gestito dal server.
-            const searchTerm = document.getElementById('searchBox').value.toLowerCase();
-            const activeView = document.querySelector('.view-btn.active').dataset.view;
+        function updateVisibleCount() {{
+            const cardsView = document.getElementById('bookmarksGrid');
+            let count = 0;
+            if (cardsView.style.display !== 'none') {{
+                count = document.querySelectorAll('.bookmark-card').length;
+            }} else {{
+                count = document.querySelectorAll('.compact-item').length;
+            }}
+            document.getElementById('visibleCount').textContent = count;
+        }}
 
-            document.querySelectorAll('.bookmark-card, .compact-item').forEach(item => {{
-                const isCardViewItem = item.classList.contains('bookmark-card');
-                const isCompactViewItem = item.classList.contains('compact-item');
-                let isVisible = true;
+        // --- DATA LOADING ---
+        async function loadMoreBookmarks() {{
+            if (isLoading || allLoaded) return;
+            isLoading = true;
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            loadingIndicator.style.display = 'block';
 
-                const searchText = item.dataset.searchText || '';
-                if (!searchText.includes(searchTerm)) {{
-                    isVisible = false;
+            const searchTerm = document.getElementById('searchBox').value;
+            let apiUrl = `/api/bookmarks?offset=${{currentOffset}}&limit=${{limit}}&hide_read=${{hideRead}}`;
+            if (activeSpecialFilter) apiUrl += `&filter=${{activeSpecialFilter}}`;
+            if (searchTerm) apiUrl += `&search=${{encodeURIComponent(searchTerm)}}`;
+
+            try {{
+                const response = await fetch(apiUrl);
+                const newBookmarks = await response.json();
+
+                if (newBookmarks.length === 0) {{
+                    allLoaded = true;
+                    loadingIndicator.textContent = currentOffset === 0 ? 'Nessun bookmark trovato.' : 'Tutti i bookmark sono stati caricati.';
+                    if (currentOffset === 0) document.getElementById('visibleCount').textContent = 0;
+                    return;
                 }}
 
-                // Applica la visibilità in base alla vista attiva
-                if (activeView === 'cards' && isCardViewItem) item.style.display = isVisible ? 'block' : 'none';
-                else if (activeView === 'compact' && isCompactViewItem) item.style.display = isVisible ? 'grid' : 'none';
-                else item.style.display = 'none';
-            }});
+                const cardsContainer = document.getElementById('bookmarksGrid');
+                const compactContainer = document.getElementById('bookmarksCompact');
+
+                newBookmarks.forEach(bookmark => {{
+                    cardsContainer.insertAdjacentHTML('beforeend', renderBookmarkCard(bookmark));
+                    compactContainer.insertAdjacentHTML('beforeend', renderBookmarkCompactItem(bookmark));
+                }});
+
+                currentOffset += newBookmarks.length;
+                updateVisibleCount();
+
+            }} catch (error) {{
+                console.error("Errore nel caricamento dei bookmark:", error);
+                loadingIndicator.textContent = 'Errore nel caricamento.';
+            }} finally {{
+                isLoading = false;
+                if (allLoaded) {{
+                    loadingIndicator.style.display = 'block';
+                }} else {{
+                    loadingIndicator.style.display = 'none';
+                }}
+            }}
+        }}
+
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', function() {{
+            // Restore state from localStorage
+            const savedHideRead = localStorage.getItem('hideRead');
+            hideRead = savedHideRead !== null ? JSON.parse(savedHideRead) : true;
+            updateHideReadButton();
+
+            // Initial view setup
+            switchView('cards');
             updateVisibleCount();
 
-            // Dopo aver filtrato, controlla se è necessario caricare altri bookmark
-            // perché la pagina potrebbe non essere più scrollabile.
-            if (document.body.scrollHeight <= window.innerHeight && !isLoading && !allLoaded) {{
+            // Event Listeners
+            document.querySelectorAll('.view-btn[data-view]').forEach(btn => {{
+                btn.addEventListener('click', () => switchView(btn.dataset.view));
+            }});
+
+            document.getElementById('searchBox').addEventListener('input', function(e) {{
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {{
+                    triggerSearch();
+                }}, 300); // Debounce
+            }});
+
+            window.addEventListener('scroll', () => {{
+                if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 300) {{
+                    loadMoreBookmarks();
+                }}
+            }});
+            
+            // Load more if the initial content is not scrollable
+            if (document.body.scrollHeight <= window.innerHeight) {{
                 loadMoreBookmarks();
             }}
-        }}
+        }});
 
-        // Applica il filtro quando si cambia vista
 
-        // Domain filters removed per user request (cleanup)
-
-        let activeSpecialFilter = null;
-
-        function filterSpecial(type, event) {{
-            const clickedButton = event.target;
-            const specialButtons = document.querySelectorAll('.special-filters .filter-btn');
-
-            // Se il filtro cliccato è già attivo, lo disattiviamo
-            if (clickedButton.classList.contains('active')) {{
-                activeSpecialFilter = null;
-                clickedButton.classList.remove('active');
-            }} else {{
-                // Altrimenti, disattiviamo gli altri e attiviamo quello cliccato
-                specialButtons.forEach(btn => btn.classList.remove('active'));
-                clickedButton.classList.add('active');
-                activeSpecialFilter = type;
-            }}
-
-            // Svuota i contenitori dei bookmark
-            document.getElementById('bookmarksGrid').innerHTML = '';
-            document.getElementById('bookmarksCompact').innerHTML = '';
-
-            // Resetta lo stato dell'infinite scroll
-            currentOffset = 0;
-            allLoaded = false;
-            isLoading = false;
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            loadingIndicator.textContent = 'Caricamento...';
-            loadingIndicator.style.display = 'none';
-
-            // Carica i primi risultati filtrati
-            loadMoreBookmarks();
-        }}
-
-        // Logica per il modale di modifica
+        // --- MODAL LOGIC ---
         const editModal = document.getElementById('editModal');
         const editForm = document.getElementById('editBookmarkForm');
 
         function openAddModal() {{
             editForm.reset();
             document.getElementById('modalTitle').textContent = 'Aggiungi Nuovo Bookmark';
-            document.getElementById('edit-id').value = ''; // Assicura che l'ID sia vuoto
+            document.getElementById('edit-id').value = '';
             editModal.style.display = 'block';
         }}
 
@@ -799,21 +827,13 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
             const method = isAdding ? 'POST' : 'PUT';
             const url = isAdding ? '/api/bookmarks' : '/api/bookmarks/' + id;
 
-            // Gestisci checkbox
             data.is_read = document.getElementById('edit-is_read').checked ? 1 : 0;
 
-            // Rimuovi campi vuoti e l'ID dal corpo della richiesta
             Object.keys(data).forEach(key => {{
-                if (data[key] === '') {{
-                    delete data[key];
-                }}
+                if (data[key] === '') delete data[key];
             }});
-            // L'ID non deve mai essere nel body
             delete data.id;
-            // In modalità aggiunta, non inviare il campo is_read se non è spuntato
-            if (isAdding && !data.is_read) {{
-                delete data.is_read;
-            }}
+            if (isAdding && !data.is_read) delete data.is_read;
 
             try {{
                 const response = await fetch(url, {{
@@ -833,13 +853,18 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
             }}
         }});
 
-
-        // API actions: delete and mark read
+        // --- API ACTIONS ---
         async function bookmarkDelete(id) {{
             if (!confirm('Sei sicuro di voler eliminare questo bookmark?')) return;
             try {{
                 const res = await fetch('/api/bookmarks/' + id, {{ method: 'DELETE' }});
-                if (res.ok) location.reload(); else alert("Errore durante la cancellazione");
+                if (res.ok) {{
+                    document.querySelector(`.bookmark-card[data-id='${{id}}']`)?.remove();
+                    document.querySelector(`.compact-item[data-id='${{id}}']`)?.remove();
+                    updateVisibleCount();
+                }} else {{
+                     alert("Errore durante la cancellazione");
+                }}
             }} catch (e) {{
                 alert("Errore di connessione");
             }}
@@ -857,21 +882,12 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
                     body: JSON.stringify({{ is_read: newReadState }})
                 }});
                 if (response.ok) {{
-                    // Aggiornamento dinamico senza ricaricare la pagina
                     const updatedBookmarkData = await response.json();
                     const newReadStatus = updatedBookmarkData.is_read;
 
-                    // Trova entrambi gli elementi (card e compact)
-                    const cardItem = document.querySelector(`.bookmark-card[data-id='${{id}}']`);
-                    const compactItem = document.querySelector(`.compact-item[data-id='${{id}}']`);
-
-                    [cardItem, compactItem].forEach(el => {{
+                    [document.querySelector(`.bookmark-card[data-id='${{id}}']`), document.querySelector(`.compact-item[data-id='${{id}}']`)].forEach(el => {{
                         if (!el) return;
-
-                        // Aggiorna l'attributo data-is-read
                         el.dataset.isRead = newReadStatus;
-
-                        // Aggiorna l'icona e il titolo del pulsante
                         const readButton = el.querySelector('.icon-btn.read');
                         if (readButton) {{
                             const isRead = newReadStatus == 1;
@@ -880,8 +896,6 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
                                 ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`
                                 : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
                         }}
-
-                        // Se stiamo nascondendo i letti, fai sparire l'elemento appena marcato
                         if (hideRead && newReadStatus == 1) {{
                             el.style.display = 'none';
                         }}
@@ -895,7 +909,79 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
             }}
         }}
 
-        // Stili per il modale
+        // --- DYNAMIC RENDERING ---
+        function renderBookmarkCard(bookmark) {{
+            const imageHtml = bookmark.image_url
+                ? `<img src="${{bookmark.image_url}}" alt="Preview" class="bookmark-image" onerror="this.style.display='none'">`
+                : '<div class="bookmark-image" style="display: flex; align-items: center; justify-content: center; background: #f8f9fa; color: #6c757d;">🔗</div>';
+            const telegramBadge = bookmark.telegram_user_id ? '<span class="telegram-badge">📱 Telegram</span>' : '';
+            const hnLink = bookmark.comments_url ? `<a href="${{bookmark.comments_url}}" target="_blank" class="hn-link">🗞️ HN</a>` : '';
+            const bookmarkJson = JSON.stringify(bookmark).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+            
+            const isRead = bookmark.is_read == 1;
+            const readButtonTitle = isRead ? "Segna come non letto" : "Segna come letto";
+            const readButtonIcon = isRead 
+                ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`
+                : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+            return `
+            <div class="bookmark-card" data-id="${{bookmark.id}}" data-is-read="${{bookmark.is_read}}">
+                <div class="bookmark-header">
+                    ${{imageHtml}}
+                    <div class="bookmark-info">
+                        <div class="bookmark-actions-top">
+                            ${{telegramBadge}}
+                            ${{hnLink}}
+                            <button class="icon-btn read" title="${{readButtonTitle}}" onclick="bookmarkMarkRead(${{bookmark.id}})">${{readButtonIcon}}</button>
+                            <button class="icon-btn edit" title="Modifica" onclick='openEditModal(${{bookmarkJson}})'><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                            <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete(${{bookmark.id}})"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                        </div>
+                        <div class="bookmark-title">${{escape_html(bookmark.title) || 'Senza titolo'}}</div>
+                    </div>
+                </div>
+                <a href="${{escape_html(bookmark.url)}}" target="_blank" class="bookmark-url">${{escape_html(bookmark.url)}}</a>
+                <div class="bookmark-description">${{escape_html(bookmark.description) || 'Nessuna descrizione'}}</div>
+                <div class="bookmark-footer">
+                    <span class="bookmark-date">${{bookmark.saved_at}}</span>
+                </div>
+            </div>`;
+        }}
+
+        function renderBookmarkCompactItem(bookmark) {{
+            const imageHtml = bookmark.image_url
+                ? `<img src="${{bookmark.image_url}}" alt="Preview" class="compact-image" onerror="this.innerHTML='🔗'">`
+                : '<div class="compact-image">🔗</div>';
+            let badgesHtml = '';
+            if (bookmark.telegram_user_id) badgesHtml += '<span class="telegram-badge">TG</span>';
+            if (bookmark.comments_url) badgesHtml += `<a href="${{bookmark.comments_url}}" target="_blank" class="hn-link">HN</a>`;
+            if (badgesHtml) badgesHtml = `<div class="compact-badges">${{badgesHtml}}</div>`;
+            const shortDate = (bookmark.saved_at || '').split(' ')[0];
+            const bookmarkJson = JSON.stringify(bookmark).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+
+            const isRead = bookmark.is_read == 1;
+            const readButtonTitle = isRead ? "Segna come non letto" : "Segna come letto";
+            const readButtonIcon = isRead 
+                ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`
+                : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+            return `
+            <div class="compact-item" data-id="${{bookmark.id}}" data-is-read="${{bookmark.is_read}}">
+                ${{imageHtml}}
+                <div class="compact-content">
+                    <div class="compact-actions-top">
+                        ${{badgesHtml}}
+                        <button class="icon-btn read" title="${{readButtonTitle}}" onclick="bookmarkMarkRead(${{bookmark.id}})">${{readButtonIcon}}</button>
+                        <button class="icon-btn edit" title="Modifica" onclick='openEditModal(${{bookmarkJson}})'><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                        <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete(${{bookmark.id}})"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                    </div>
+                    <div class="compact-title">${{escape_html(bookmark.title) || 'Senza titolo'}}</div>
+                    <a href="${{escape_html(bookmark.url)}}" target="_blank" class="compact-url">${{escape_html(bookmark.url)}}</a>
+                </div>
+                <div class="compact-date">${{shortDate}}</div>
+            </div>`;
+        }}
+
+        // --- MODAL STYLES ---
         const modalStyle = `
             .modal {{
                 display: none;
@@ -946,144 +1032,6 @@ def get_html(self, bookmarks, version="N/A", total_count=0):
         styleSheet.type = "text/css";
         styleSheet.innerText = modalStyle;
         document.head.appendChild(styleSheet);
-
-        // --- Funzioni di Rendering Client-Side ---
-        function renderBookmarkCard(bookmark) {{
-            const imageHtml = bookmark.image_url
-                ? `<img src="${{bookmark.image_url}}" alt="Preview" class="bookmark-image" onerror="this.style.display='none'">`
-                : '<div class="bookmark-image" style="display: flex; align-items: center; justify-content: center; background: #f8f9fa; color: #6c757d;">🔗</div>';
-            const telegramBadge = bookmark.telegram_user_id ? '<span class="telegram-badge">📱 Telegram</span>' : '';
-            const hnLink = bookmark.comments_url ? `<a href="${{bookmark.comments_url}}" target="_blank" class="hn-link">🗞️ HN</a>` : '';
-            const bookmarkJson = JSON.stringify(bookmark).replace(/"/g, '&quot;');
-            const searchText = `${{bookmark.url || ''}} ${{bookmark.title || ''}} ${{bookmark.description || ''}} ${{bookmark.domain || ''}}`.toLowerCase();
-
-            const isRead = bookmark.is_read == 1;
-            const readButtonTitle = isRead ? "Segna come non letto" : "Segna come letto";
-            const readButtonIcon = isRead 
-                ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>` // Icona "già letto" (doppio check)
-                : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`; // Icona "da leggere"
-
-            return `
-            <div class="bookmark-card" data-id="${{bookmark.id}}" data-is-read="${{bookmark.is_read}}" data-search-text="${{searchText}}">
-                <div class="bookmark-header">
-                    ${{imageHtml}}
-                    <div class="bookmark-info">
-                        <div class="bookmark-actions-top">
-                            ${{telegramBadge}}
-                            ${{hnLink}}
-                            <button class="icon-btn read" title="${{readButtonTitle}}" onclick="bookmarkMarkRead(${{bookmark.id}})">${{readButtonIcon}}</button>
-                            <button class="icon-btn edit" title="Modifica" onclick='openEditModal(${{bookmarkJson}})'><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-                            <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete(${{bookmark.id}})"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-                        </div>
-                        <div class="bookmark-title">${{bookmark.title || 'Senza titolo'}}</div>
-                    </div>
-                </div>
-                <a href="${{bookmark.url}}" target="_blank" class="bookmark-url">${{bookmark.url}}</a>
-                <div class="bookmark-description">${{bookmark.description || 'Nessuna descrizione'}}</div>
-                <div class="bookmark-footer">
-                    <span class="bookmark-date">${{bookmark.saved_at}}</span>
-                </div>
-            </div>`;
-        }}
-
-        function renderBookmarkCompactItem(bookmark) {{
-            const imageHtml = bookmark.image_url
-                ? `<img src="${{bookmark.image_url}}" alt="Preview" class="compact-image" onerror="this.innerHTML='🔗'">`
-                : '<div class="compact-image">🔗</div>';
-            let badgesHtml = '';
-            if (bookmark.telegram_user_id) badgesHtml += '<span class="telegram-badge">TG</span>';
-            if (bookmark.comments_url) badgesHtml += `<a href="${{bookmark.comments_url}}" target="_blank" class="hn-link">HN</a>`;
-            if (badgesHtml) badgesHtml = `<div class="compact-badges">${{badgesHtml}}</div>`;
-            const shortDate = (bookmark.saved_at || '').split(' ')[0];
-            const bookmarkJson = JSON.stringify(bookmark).replace(/"/g, '&quot;');
-            const searchText = `${{bookmark.url || ''}} ${{bookmark.title || ''}} ${{bookmark.description || ''}} ${{bookmark.domain || ''}}`.toLowerCase();
-
-            const isRead = bookmark.is_read == 1;
-            const readButtonTitle = isRead ? "Segna come non letto" : "Segna come letto";
-            const readButtonIcon = isRead 
-                ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>` // Icona "già letto" (doppio check)
-                : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`; // Icona "da leggere"
-
-            return `
-            <div class="compact-item" data-id="${{bookmark.id}}" data-is-read="${{bookmark.is_read}}" data-search-text="${{searchText}}">
-                ${{imageHtml}}
-                <div class="compact-content">
-                    <div class="compact-actions-top">
-                        ${{badgesHtml}}
-                        <button class="icon-btn read" title="${{readButtonTitle}}" onclick="bookmarkMarkRead(${{bookmark.id}})">${{readButtonIcon}}</button>
-                        <button class="icon-btn edit" title="Modifica" onclick='openEditModal(${{bookmarkJson}})'><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-                        <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete(${{bookmark.id}})"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-                    </div>
-                    <div class="compact-title">${{bookmark.title || 'Senza titolo'}}</div>
-                    <a href="${{bookmark.url}}" target="_blank" class="compact-url">${{bookmark.url}}</a>
-                </div>
-                <div class="compact-date">${{shortDate}}</div>
-            </div>`;
-        }}
-
-        // --- Infinite Scroll ---
-        let isLoading = false;
-        let allLoaded = false;
-        let currentOffset = {len(bookmarks)};
-        const limit = 20;
-
-        window.addEventListener('scroll', () => {{
-            if (isLoading || allLoaded) return;
-
-            // Avvia il caricamento quando l'utente è a 300px dal fondo
-            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 300) {{
-                loadMoreBookmarks();
-            }}
-        }});
-
-        // Controlla se è necessario caricare più bookmark dopo un filtro
-        const observer = new MutationObserver(() => {{
-            if (document.body.scrollHeight <= window.innerHeight && !isLoading && !allLoaded) {{
-                loadMoreBookmarks();
-            }}
-        }});
-
-        async function loadMoreBookmarks() {{
-            isLoading = true;
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            loadingIndicator.style.display = 'block';
-
-            try {{
-                let apiUrl = `/api/bookmarks?offset=${{currentOffset}}&limit=${{limit}}&hide_read=${{hideRead}}`;
-                if (activeSpecialFilter) apiUrl += `&filter=${{activeSpecialFilter}}`;
-                const response = await fetch(apiUrl);
-                const newBookmarks = await response.json();
-
-                if (newBookmarks.length === 0) {{
-                    allLoaded = true;
-                    loadingIndicator.textContent = 'Tutti i bookmark sono stati caricati.';
-                    return;
-                }}
-
-                const cardsContainer = document.getElementById('bookmarksGrid');
-                const compactContainer = document.getElementById('bookmarksCompact');
-
-                newBookmarks.forEach(bookmark => {{
-                    // Crea e appende la nuova card e l'item compatto
-                    cardsContainer.insertAdjacentHTML('beforeend', renderBookmarkCard(bookmark));
-                    compactContainer.insertAdjacentHTML('beforeend', renderBookmarkCompactItem(bookmark));
-                }});
-
-                currentOffset += newBookmarks.length;
-                applyAllFilters(); // Riapplica i filtri per i nuovi elementi
-
-            }} catch (error) {{
-                console.error("Errore nel caricamento dei bookmark:", error);
-                loadingIndicator.textContent = 'Errore nel caricamento.';
-            }} finally {{
-                isLoading = false;
-                if (!allLoaded) loadingIndicator.style.display = 'none';
-            }}
-        }}
-
-        // Avvia l'observer per monitorare le modifiche al DOM
-        observer.observe(document.getElementById('bookmarksGrid'), {{ childList: true, subtree: true }});
-        observer.observe(document.getElementById('bookmarksCompact'), {{ childList: true, subtree: true }});
 
     </script>
 </body>

@@ -11,14 +11,18 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import socket
 import sys
-# datetime non usato direttamente
+
+# Aggiungi la root del progetto al path per importare la libreria condivisa
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+
+from shared.utils import extract_domain
 from htmldata import get_html
 
-__version__ = "1.3.2"
+__version__ = "1.3.3"
 # Configurazione
 
 # Default
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(SCRIPT_DIR, '..', 'telegram_bot', 'bookmarks.db')
 PORT = 8443
 
@@ -46,8 +50,9 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             limit = int(query_components.get("limit", [20])[0]) # noqa
             offset = int(query_components.get("offset", [0])[0]) # noqa
             filter_type = query_components.get("filter", [None])[0] # noqa
+            search_query = query_components.get("search", [None])[0]
             hide_read = query_components.get("hide_read", ['false'])[0].lower() == 'true'
-            self.serve_bookmarks_api(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read)
+            self.serve_bookmarks_api(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query)
         else:
             self._send_error_response(404, "Not Found")
 
@@ -162,24 +167,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(error_data, ensure_ascii=False).encode('utf-8'))
 
-    def extract_domain(self, url):
-        """
-        Estrae il dominio (host) da un URL.
-
-        Input: string `url`.
-        Output: dominio in minuscolo senza il prefisso 'www.' quando presente.
-        In caso di errore ritorna stringa vuota.
-        """
-        try:
-            parsed = urlparse(url)
-            domain = parsed.netloc.lower()
-            # Rimuovi www. se presente
-            if domain.startswith('www.'):
-                domain = domain[4:]
-            return domain
-        except Exception:
-            return ''
-
     def render_bookmarks(self, bookmarks):
         """
         Renderizza i bookmark come HTML nella vista "card" (dettagliata).
@@ -247,7 +234,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                             {telegram_badge}
                             {hn_link}
                             <button class="icon-btn read" title="{read_button_title}" onclick="bookmarkMarkRead({bookmark_safe[0]})">{read_button_icon}</button>
-                            <button class="icon-btn edit" title="Modifica" onclick="openEditModal(({bookmark_json_html}))">
+                            <button class="icon-btn edit" title="Modifica" onclick='openEditModal({bookmark_json_html})'>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
                             <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete({bookmark_safe[0]})">
@@ -311,10 +298,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             if bookmark_list[3]: bookmark_list[3] = re.sub(r'[\r\n\u2028\u2029]', ' ', str(bookmark_list[3]))
             bookmark_safe = tuple(bookmark_list)
 
-            # Crea una stringa di ricerca che contiene tutti i dati testuali
-            search_text = f"{bookmark_safe[1] or ''} {bookmark_safe[2] or ''} {bookmark_safe[3] or ''} {bookmark_safe[5] or ''}".lower()
-            search_text = re.sub(r'[\r\n\u2028\u2029]', ' ', search_text)
-
             # Converte la tupla del bookmark in un dizionario JSON per il pulsante di modifica
             bookmark_json = json.dumps(dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], bookmark_safe)), ensure_ascii=False)
             bookmark_json_html = bookmark_json.replace('"', '&quot;')
@@ -329,13 +312,13 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             )
 
             html_items.append(f"""
-            <div class="compact-item" data-id="{bookmark_safe[0]}" data-is-read="{bookmark_safe[10]}" data-search-text="{search_text}">
+            <div class="compact-item" data-id="{bookmark_safe[0]}" data-is-read="{bookmark_safe[10]}">
                 {image_html}
                 <div class="compact-content">
                     <div class="compact-actions-top">
                         {badges_html}
                         <button class="icon-btn read" title="{read_button_title}" onclick="bookmarkMarkRead({bookmark_safe[0]})">{read_button_icon}</button>
-                        <button class="icon-btn edit" title="Modifica" onclick="openEditModal(({bookmark_json_html}))">
+                        <button class="icon-btn edit" title="Modifica" onclick='openEditModal({bookmark_json_html})'>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
                         <button class="icon-btn delete" title="Elimina" onclick="bookmarkDelete({bookmark_safe[0]})">
@@ -351,12 +334,12 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         return ''.join(html_items)
 
-    def serve_bookmarks_api(self, limit=20, offset=0, filter_type=None, hide_read=False):
+    def serve_bookmarks_api(self, limit=20, offset=0, filter_type=None, hide_read=False, search_query=None):
         """
         API che restituisce la lista dei bookmark in formato JSON.
 
         Azioni:
-          - recupera i bookmark con get_bookmarks()
+          - recupera i bookmark con get_bookmarks(), applicando filtri e ricerca
           - costruisce una lista di dizionari serializzabile in JSON
           - invia la risposta HTTP 200 con Content-Type application/json
 
@@ -364,7 +347,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         image_url, domain, saved_at, telegram_user_id, telegram_message_id,
         comments_url, is_read.
         """
-        bookmarks = self.get_bookmarks(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read)
+        bookmarks = self.get_bookmarks(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query)
 
         bookmark_list = [] # noqa
         for bookmark in bookmarks:
@@ -443,7 +426,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             # If url changed, update domain automatically
             if 'url' in fields:
-                fields['domain'] = self.extract_domain(fields['url'])
+                fields['domain'] = extract_domain(fields['url'])
 
             set_clause = ', '.join([f"{k} = ?" for k in fields.keys()])
             params = list(fields.values())
@@ -518,7 +501,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 raise ValueError("URL è obbligatorio")
 
             # Estrai dominio automaticamente
-            domain = self.extract_domain(url)
+            domain = extract_domain(url)
 
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
@@ -569,15 +552,17 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             print(f"Errore database nel conteggio: {e}")
             return 0
 
-    def _build_query_parts(self, filter_type=None, hide_read=False):
+    def _build_query_parts(self, filter_type=None, hide_read=False, search_query=None):
         """
-        Recupera i bookmark dal database e restituisce una lista di tuple.
+        Costruisce le clausole WHERE e i parametri per le query dei bookmark.
 
-        Output: lista di tuple con colonne:
-          (id, url, title, description, image_url, domain, saved_at,
-           telegram_user_id, telegram_message_id, comments_url, is_read)
+        Args:
+            filter_type (str, optional): Filtro per 'telegram', 'hn', 'recent'.
+            hide_read (bool, optional): Se True, esclude i bookmark letti.
+            search_query (str, optional): Termine di ricerca testuale.
 
-        In caso di errore con il DB stampa il messaggio di errore e ritorna lista vuota.
+        Returns:
+            tuple: Una stringa con le clausole WHERE e una lista di parametri.
         """
         where_clauses = ["1=1"]
         params = []
@@ -588,24 +573,28 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             where_clauses.append("comments_url IS NOT NULL AND comments_url != ''")
         elif filter_type == 'recent':
             where_clauses.append("saved_at >= datetime('now', '-7 days')")
-        
+
         if hide_read:
             where_clauses.append("is_read = 0")
 
+        if search_query:
+            where_clauses.append("(title LIKE ? OR description LIKE ? OR url LIKE ? OR domain LIKE ?)")
+            params.extend([f'%{search_query}%'] * 4)
+
         return " AND ".join(where_clauses), params
 
-    def get_bookmarks(self, limit=20, offset=0, filter_type=None, hide_read=False):
+    def get_bookmarks(self, limit=20, offset=0, filter_type=None, hide_read=False, search_query=None):
         """
-        Recupera i bookmark dal database, applicando filtri opzionali.
+        Recupera i bookmark dal database, applicando filtri e ricerca opzionali.
         """
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
 
-            where_clause, params = self._build_query_parts(filter_type, hide_read)
+            where_clause, params = self._build_query_parts(filter_type, hide_read, search_query)
 
             cursor.execute("""
-                SELECT id, url, title, description, image_url, domain, 
+                SELECT id, url, title, description, image_url, domain,
                     datetime(saved_at, 'localtime') as saved_at,
                     telegram_user_id, telegram_message_id, comments_url,
                     COALESCE(is_read, 0) as is_read
@@ -754,25 +743,14 @@ Premi Ctrl+C per fermare il server.
         httpd.shutdown()
 
 if __name__ == '__main__':
-    # Aggiunge la cartella del bot al path per permettere l'import
-    sys.path.append(os.path.join(SCRIPT_DIR, '..', 'telegram_bot'))
+    # Aggiungi la root del progetto al path per importare la libreria condivisa
+    sys.path.append(os.path.dirname(SCRIPT_DIR))
     try:
-        from bot import BookmarkBot
-
-        # Crea un'istanza "dummy" del bot per usare solo la sua logica di DB.
-        # Sovrascriviamo i metodi che avviano il client per evitare che parta.
-
-        # Per inizializzare il DB, creiamo un'istanza del bot ma
-        # "neutralizziamo" il suo metodo run() per evitare che avvii il client Telegram.
-        # Questo è un modo per riutilizzare la logica di init_database senza duplicare codice.
-        class DummyBot(BookmarkBot):
-            def run(self):
-                # Sovrascrive il metodo run per non fare nulla
-                pass
-
-        print("Inizializzazione database usando la logica del bot...")
-        dummy_bot = DummyBot() # Questo chiama __init__ che a sua volta chiama init_database()
-
+        # Importa direttamente la funzione di inizializzazione del DB
+        from shared.database import init_database
+        print("Inizializzazione database...")
+        init_database()
+        
         # Avvia il server
         main()
 

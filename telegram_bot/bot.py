@@ -2,14 +2,18 @@
 Modulo principale del bot Telegram per il salvataggio di bookmark.
 """
 import os
+import sys
 import re
 import sqlite3
-import requests
-from bs4 import BeautifulSoup
 from pyrogram import Client, filters
 from datetime import datetime
-from database import init_database, get_db_path
 from urllib.parse import urlparse
+
+# Aggiungi la root del progetto al path per importare la libreria condivisa
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+from shared.database import init_database, get_db_path
+from shared.utils import get_article_metadata
 import logging
 
 # Setup logging
@@ -120,94 +124,6 @@ class BookmarkBot:
             if item_id:
                 return f"https://news.ycombinator.com/item?id={item_id}"
         return None
-
-    def get_article_metadata(self, url):
-        """Estrae metadati dall'articolo"""
-        try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            }
-
-            try:
-                # Esegui una richiesta HEAD per controllare il tipo di contenuto
-                head_response = requests.head(url, headers=headers, timeout=10, allow_redirects=True)
-                head_response.raise_for_status()
-                
-                content_type = head_response.headers.get("Content-Type", "")
-                if "text/html" not in content_type:
-                    logger.info(f"URL {url} non è una pagina HTML (Content-Type: {content_type}). Salto l'analisi.")
-                    return {
-                        "title": f"Link a file ({content_type})",
-                        "description": f"L'URL punta a un file di tipo {content_type} e non a una pagina web.",
-                        "image_url": "",
-                        "domain": urlparse(url).netloc,
-                    }
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 405:
-                    logger.warning(f"HEAD request non permessa per {url}. Procedo con la richiesta GET.")
-                    pass  # Continua con la richiesta GET
-                else:
-                    raise  # Rilancia altre eccezioni HTTP
-
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-
-            soup = BeautifulSoup(response.content, "html.parser")
-
-            # Estrai titolo
-            title = None
-            for selector in [
-                'meta[property="og:title"]',
-                'meta[name="twitter:title"]',
-                "title",
-            ]:
-                element = soup.select_one(selector)
-                if element:
-                    title = (
-                        element.get("content")
-                        if element.name == "meta"
-                        else element.get_text()
-                    )
-                    break
-
-            # Estrai descrizione
-            description = None
-            for selector in [
-                'meta[property="og:description"]',
-                'meta[name="twitter:description"]',
-                'meta[name="description"]',
-            ]:
-                element = soup.select_one(selector)
-                if element:
-                    description = element.get("content")
-                    break
-
-            # Estrai immagine
-            image_url = None
-            for selector in ['meta[property="og:image"]', 'meta[name="twitter:image"]']:
-                element = soup.select_one(selector)
-                if element:
-                    image_url = element.get("content")
-                    break
-
-            # Ottieni dominio
-            domain = urlparse(url).netloc
-
-            return {
-                "title": title or "Titolo non trovato",
-                "description": description or "",
-                "image_url": image_url or "",
-                "domain": domain,
-            }
-
-        except Exception as e:
-            logger.error(f"Errore nell'estrazione metadati per {url}: {e}")
-            return {
-                "title": f"Errore: {urlparse(url).netloc}",
-                "description": str(e),
-                "image_url": "",
-                "domain": urlparse(url).netloc,
-            }
 
     def save_bookmark(self, url, metadata, message, comments_url_override=None):
         """Salva il bookmark nel database"""
@@ -350,9 +266,9 @@ class BookmarkBot:
             if article_url and hn_url:
                 # Caso speciale: un solo bookmark per la coppia articolo + commenti HN
                 logger.info(f"---> Rilevato pattern Hacker News: Articolo={article_url}, Commenti={hn_url}")
-                # Estrai metadati dall'articolo, ma la descrizione dalla pagina HN
-                article_metadata = self.get_article_metadata(article_url)
-                hn_metadata = self.get_article_metadata(hn_url)
+                # Estrai metadati dall'articolo e dalla pagina HN usando la funzione condivisa
+                article_metadata = get_article_metadata(article_url)
+                hn_metadata = get_article_metadata(hn_url)
 
                 # Unisci le informazioni: descrizione da HN, il resto dall'articolo
                 metadata = article_metadata
@@ -372,7 +288,7 @@ class BookmarkBot:
             saved_metadata = []
             for url in unique_urls:
                 logger.info(f"---> Processando URL: {url}")
-                metadata = self.get_article_metadata(url)
+                metadata = get_article_metadata(url)
                 logger.info(f"---> Salvando bookmark nel DB...")
                 success = self.save_bookmark(url, metadata, message)
                 if success:
