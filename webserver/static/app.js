@@ -3,6 +3,7 @@ let isLoading = false;
 let allLoaded = false;
 let currentOffset = 0;
 const limit = 20;
+let currentView = 'cards';
 let hideRead = true;
 let visibleCount = 0;
 let activeSpecialFilter = null;
@@ -37,24 +38,27 @@ function showToast(message, isError = false) {
 }
 
 // --- VIEW SWITCHING ---
-function switchView(view) {
+function setView(view) {
     const cardsView = document.getElementById('bookmarksGrid');
     const compactView = document.getElementById('bookmarksCompact');
-    const buttons = document.querySelectorAll('.view-btn[data-view]');
-
-    buttons.forEach(btn => btn.classList.remove('active'));
-    const activeBtn = document.querySelector(`.view-btn[data-view="${view}"]`);
-    if (activeBtn) activeBtn.classList.add('active');
+    const viewToggleBtn = document.getElementById('viewToggleBtn');
 
     if (view === 'cards') {
         cardsView.style.display = 'grid';
         compactView.classList.remove('show');
+        viewToggleBtn.innerHTML = '📄 Vista Compatta';
     } else {
         cardsView.style.display = 'none';
         compactView.classList.add('show');
+        viewToggleBtn.innerHTML = '📋 Vista Cards';
     }
-    document.getElementById('viewStatus').textContent = view;
+    currentView = view;
     updateVisibleCount();
+}
+
+function toggleView() {
+    const newView = currentView === 'cards' ? 'compact' : 'cards';
+    setView(newView);
 }
 
 // --- FILTERS & SEARCH ---
@@ -150,6 +154,30 @@ async function loadMoreBookmarks() {
     }
 }
 
+// --- THEME SWITCHING (DARK MODE) ---
+function applyTheme(theme) {
+    const themeToggleBtn = document.getElementById('themeToggleBtn');
+    if (theme === 'dark') {
+        document.documentElement.classList.add('dark-mode');
+        if (themeToggleBtn) themeToggleBtn.textContent = '☀️ Light Mode';
+    } else {
+        document.documentElement.classList.remove('dark-mode');
+        if (themeToggleBtn) themeToggleBtn.textContent = '🌙 Dark Mode';
+    }
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.classList.contains('dark-mode') ? 'dark' : 'light';
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('theme', newTheme);
+    applyTheme(newTheme);
+}
+
+function initializeTheme() {
+    const savedTheme = localStorage.getItem('theme');
+    const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    applyTheme(savedTheme || (systemPrefersDark ? 'dark' : 'light'));
+}
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', function() {
     // Set initial state from data passed by the server
@@ -161,14 +189,17 @@ document.addEventListener('DOMContentLoaded', function() {
     hideRead = savedHideRead !== null ? JSON.parse(savedHideRead) : true;
     updateHideReadButton();
 
+    // Initialize theme
+    initializeTheme();
+
     // Initial view setup
-    switchView('cards');
+    setView('cards');
     updateVisibleCount();
 
     // Event Listeners
-    document.querySelectorAll('.view-btn[data-view]').forEach(btn => {
-        btn.addEventListener('click', () => switchView(btn.dataset.view));
-    });
+    document.getElementById('viewToggleBtn').addEventListener('click', toggleView);
+    document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
+
 
     document.getElementById('searchBox').addEventListener('input', function(e) {
         clearTimeout(searchTimeout);
@@ -283,6 +314,15 @@ editForm.addEventListener('submit', async function(e) {
             }
             closeEditModal();
             showToast("Bookmark aggiornato con successo!");
+        } else if (response.ok && isAdding) {
+            // Se l'aggiunta ha successo, aggiorna il contatore e ricarica
+            const totalCountEl = document.getElementById('totalCount');
+            if (totalCountEl) {
+                totalCountEl.textContent = parseInt(totalCountEl.textContent, 10) + 1;
+            }
+            closeEditModal();
+            triggerSearch(); // Ricarica la lista per mostrare il nuovo bookmark
+            showToast("Bookmark aggiunto con successo!");
         } else {
             const error = await response.json();
             showToast("Errore: " + (error.error || 'Errore sconosciuto'), true);
@@ -302,6 +342,12 @@ async function bookmarkDelete(id) {
             document.querySelector(`.compact-item[data-id='${id}']`)?.remove();
             visibleCount--;
             updateVisibleCount();
+            // Decrementa anche il contatore totale
+            const totalCountEl = document.getElementById('totalCount');
+            if (totalCountEl) {
+                let currentTotal = parseInt(totalCountEl.textContent, 10);
+                if (!isNaN(currentTotal)) totalCountEl.textContent = currentTotal - 1;
+            }
             showToast("Bookmark eliminato con successo.");
         } else {
              showToast("Errore durante la cancellazione", true);

@@ -29,9 +29,8 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
             <button type="button" class="view-btn add-bookmark-btn" onclick="openAddModal()">
                 ➕ Aggiungi Bookmark
             </button>
-            <button type="button" class="view-btn active" data-view="cards">📋 Vista Cards</button>
-            <button type="button" class="view-btn" data-view="compact">📄 Vista Compatta</button>
-            <span id="viewStatus" style="margin-left:12px; font-weight:600; color:#333">cards</span>
+            <button type="button" class="view-btn" id="viewToggleBtn" title="Cambia vista">📄 Vista Compatta</button>
+            <button type="button" class="view-btn" id="themeToggleBtn" title="Cambia tema">🌙 Dark Mode</button>
         </div>
 
         <!-- Filtri speciali -->

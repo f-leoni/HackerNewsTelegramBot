@@ -140,21 +140,16 @@ h1 {
     color: white;
 }
 
-.view-btn:hover {
-    background: #007bff;
-    color: white;
-}
-
-/* Vista normale (cards) */
 .bookmarks-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 20px;
 }
 
 .bookmark-card {
     background: white;
     border: 1px solid #e9ecef;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     border-radius: 8px;
     padding: 20px;
     transition: all 0.3s ease;
@@ -542,4 +537,146 @@ footer {
 }
 .toast.error {
     background-color: #c82333; /* Rosso per errori */
+}
+
+/* --- DARK MODE STYLES --- */
+html.dark-mode {
+    --bg-color: #121212;
+    --text-color: #e0e0e0;
+    --card-bg: #1e1e1e;
+    --container-bg: #181818;
+    --border-color: #3a3a3a;
+    --header-bg: #1a1a1a;
+    --link-color: #8ab4f8;
+    --link-hover-color: #a7c7fa;
+    --button-bg: #333;
+    --button-hover-bg: #444;
+    --input-bg: #2c2c2c;
+    --input-border: #444;
+    --toast-bg: #333;
+    --toast-text: #fff;
+    --modal-bg: rgba(0, 0, 0, 0.7);
+    --modal-content-bg: #2b2b2b;
+}
+
+html.dark-mode body {
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
+html.dark-mode .container {
+    background: var(--container-bg);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+html.dark-mode h1 {
+    color: #f1f1f1;
+}
+
+html.dark-mode .search-box,
+html.dark-mode .modal-content .form-group input, 
+html.dark-mode .modal-content .form-group textarea {
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--text-color);
+}
+
+html.dark-mode .search-box::placeholder {
+    color: #888;
+}
+
+html.dark-mode .view-btn,
+html.dark-mode .filter-btn,
+html.dark-mode .btn {
+    background-color: var(--button-bg);
+    color: var(--text-color);
+    border-color: var(--border-color);
+}
+
+html.dark-mode .view-btn:hover,
+html.dark-mode .filter-btn:hover,
+html.dark-mode .btn:hover {
+    background-color: var(--button-hover-bg);
+}
+
+html.dark-mode .view-btn.active,
+html.dark-mode .filter-btn.active {
+    background-color: var(--link-color);
+    color: #111;
+    border-color: var(--link-color);
+}
+
+html.dark-mode #viewStatus {
+    color: #ccc;
+}
+
+html.dark-mode .stats,
+html.dark-mode footer {
+    color: #aaa;
+    border-top-color: var(--border-color);
+}
+
+html.dark-mode .bookmark-card,
+html.dark-mode .bookmarks-compact {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+html.dark-mode .compact-item {
+    border-bottom-color: var(--border-color);
+}
+
+html.dark-mode .bookmark-title,
+html.dark-mode .compact-title {
+    color: #f1f1f1;
+}
+
+html.dark-mode .bookmark-url,
+html.dark-mode .compact-url {
+    color: var(--link-color);
+}
+
+html.dark-mode a:hover {
+    color: var(--link-hover-color);
+}
+
+html.dark-mode .bookmark-description,
+html.dark-mode .bookmark-date,
+html.dark-mode .compact-date {
+    color: #a0a0a0;
+}
+
+html.dark-mode .icon-btn {
+    color: #bbb;
+}
+
+html.dark-mode .icon-btn:hover {
+    background-color: #333;
+    color: #fff;
+}
+
+html.dark-mode .bookmark-footer {
+    border-top-color: var(--border-color);
+}
+
+html.dark-mode .modal {
+    background-color: var(--modal-bg);
+}
+
+html.dark-mode .modal-content {
+    background-color: var(--modal-content-bg);
+    color: var(--text-color);
+    border-color: #555;
+}
+
+html.dark-mode .close-btn {
+    color: #aaa;
+}
+html.dark-mode .close-btn:hover {
+    color: #fff;
+}
+
+html.dark-mode #loadingIndicator {
+    color: #888;
 }
