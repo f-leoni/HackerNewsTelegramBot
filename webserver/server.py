@@ -21,7 +21,7 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from shared.utils import extract_domain
 from htmldata import get_html
 
-__version__ = "1.4"
+__version__ = "1.4.1"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -652,7 +652,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             logger.error(f"Database error fetching bookmarks: {e}")
             return []
 
-def create_self_signed_cert():
+def create_self_signed_cert(cert_file_path, key_file_path):
     """
     Crea un certificato self-signed (se non esiste) usando OpenSSL.
 
@@ -661,8 +661,8 @@ def create_self_signed_cert():
     """
     # Questa funzione richiede 'openssl' nel PATH
     import subprocess
-    if os.path.exists(cert_file) and os.path.exists(key_file):
-        logger.info(f"Certificati esistenti trovati: {cert_file}, {key_file}")
+    if os.path.exists(cert_file_path) and os.path.exists(key_file_path):
+        logger.info(f"Certificati esistenti trovati: {cert_file_path}, {key_file_path}")
         return
 
     logger.info("Creazione certificato self-signed con chiave RSA 2048-bit...")
@@ -671,15 +671,15 @@ def create_self_signed_cert():
         # Prima genera la chiave privata RSA 2048-bit
         subprocess.run([
             'openssl', 'genrsa',
-            '-out', KEY_FILE,
+            '-out', key_file_path,
             '2048'
         ], check=True, capture_output=True)
 
         # Poi genera il certificato
         subprocess.run([
             'openssl', 'req', '-new', '-x509',
-            '-key', KEY_FILE,
-            '-out', CERT_FILE,
+            '-key', key_file_path,
+            '-out', cert_file_path,
             '-days', '365',
             '-subj', '/C=IT/ST=Italy/L=Rome/O=LocalServer/CN=localhost'
         ], check=True, capture_output=True)

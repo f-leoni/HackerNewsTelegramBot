@@ -12,9 +12,10 @@ homepage.html
 oci_function.py
 privato.txt
 server.err
-server.key
-server.log
-server.pem
+*.db
+*.key
+*.log
+*.pem
 *.session
 *.session-journal
 *.bak
