@@ -28,7 +28,8 @@ def init_database():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS bookmarks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT UNIQUE NOT NULL,
+            user_id INTEGER,
+            url TEXT NOT NULL,
             title TEXT,
             description TEXT,
             image_url TEXT,
@@ -37,7 +38,28 @@ def init_database():
             telegram_user_id INTEGER,
             telegram_message_id INTEGER,
             comments_url TEXT,
-            is_read INTEGER DEFAULT 0
+            is_read INTEGER DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+            UNIQUE(user_id, url)
+        )
+    """)
+
+    # Crea la tabella degli utenti
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL
+        )
+    """)
+
+    # Crea la tabella delle sessioni
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            session_id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         )
     """)
 
@@ -48,6 +70,7 @@ def init_database():
         if "telegram_user_id" not in columns: cursor.execute("ALTER TABLE bookmarks ADD COLUMN telegram_user_id INTEGER")
         if "comments_url" not in columns: cursor.execute("ALTER TABLE bookmarks ADD COLUMN comments_url TEXT")
         if "is_read" not in columns: cursor.execute("ALTER TABLE bookmarks ADD COLUMN is_read INTEGER DEFAULT 0")
+        if "user_id" not in columns: cursor.execute("ALTER TABLE bookmarks ADD COLUMN user_id INTEGER")
     except Exception as e:
         logger.warning("Could not perform database migration: %s", e)
 

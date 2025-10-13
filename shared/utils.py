@@ -29,6 +29,11 @@ def extract_domain(url):
 def get_article_metadata(url):
     """Estrae metadati (titolo, descrizione, immagine) da un URL."""
     try:
+        # Aggiunge 'https://' se manca un protocollo per evitare errori.
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+            logger.info(f"Protocollo 'https://' aggiunto automaticamente a: {url}")
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }

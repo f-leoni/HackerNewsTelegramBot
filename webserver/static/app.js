@@ -120,6 +120,12 @@ async function loadMoreBookmarks() {
 
     try {
         const response = await fetch(apiUrl);
+        
+        if (response.status === 401) {
+            window.location.href = '/login'; // Sessione scaduta, reindirizza al login
+            return;
+        }
+
         const newBookmarks = await response.json();
 
         if (newBookmarks.length === 0) {
@@ -159,10 +165,10 @@ function applyTheme(theme) {
     const themeToggleBtn = document.getElementById('themeToggleBtn');
     if (theme === 'dark') {
         document.documentElement.classList.add('dark-mode');
-        if (themeToggleBtn) themeToggleBtn.textContent = '☀️ Light Mode';
+        if (themeToggleBtn) themeToggleBtn.textContent = '☀️';
     } else {
         document.documentElement.classList.remove('dark-mode');
-        if (themeToggleBtn) themeToggleBtn.textContent = '🌙 Dark Mode';
+        if (themeToggleBtn) themeToggleBtn.textContent = '🌙';
     }
 }
 

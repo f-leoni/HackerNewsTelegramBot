@@ -1,6 +1,39 @@
 """
 Modulo per la generazione dell'HTML della pagina web.
 """
+
+def get_login_page(error=None):
+    """Genera l'HTML per la pagina di login."""
+    error_html = f'<div class="login-error">{error}</div>' if error else ''
+    return f"""
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Zitzu's Bookmarks</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body {{ display: flex; align-items: center; justify-content: center; }}
+        .login-container {{ background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }}
+        .login-container h1 {{ margin-top: 0; }}
+        .login-error {{ background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center; }}
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>Login</h1>
+        {error_html}
+        <form action="/login" method="post">
+            <div class="form-group"><label for="username">Username</label><input type="text" id="username" name="username" required></div>
+            <div class="form-group"><label for="password">Password</label><input type="password" id="password" name="password" required></div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Accedi</button>
+        </form>
+    </div>
+</body>
+</html>
+"""
+
 def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
     # Funzione di escape per l'HTML per evitare problemi con le virgolette nei dati
     def escape_html(text):
@@ -33,7 +66,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
                 ➕ Aggiungi Bookmark
             </button>
             <button type="button" class="view-btn" id="viewToggleBtn" title="Cambia vista">📄 Vista Compatta</button>
-            <button type="button" class="view-btn" id="themeToggleBtn" title="Cambia tema">🌙 Dark Mode</button>
+            <button type="button" class="view-btn" id="themeToggleBtn" title="Cambia tema">🌙</button>
             <span><small>v{version}</small></span>
         </div>
 
@@ -41,6 +74,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
         <div class="special-filters">
             <button class="filter-btn" onclick="filterSpecial('recent', event)">🕐 Ultimi 7 giorni</button>
             <button class="filter-btn" id="hideReadBtn" onclick="toggleHideRead()">🙈 Nascondi Letti</button>
+            <a href="/logout" class="filter-btn">🚪 Logout</a>
         </div>
 
         <div class="filter-bar" id="filterBar">

@@ -9,19 +9,24 @@ import json
 import re
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.cookies import SimpleCookie
 from urllib.parse import urlparse, parse_qs
 import socket
 import sys
 from contextlib import contextmanager
+import secrets
+from datetime import datetime, timedelta
+from werkzeug.security import check_password_hash
 
 # Aggiungi la root del progetto al path per importare la libreria condivisa
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
 from shared.utils import extract_domain, get_article_metadata
+from shared.database import get_db_path
 from htmldata import get_html
-
-__version__ = "1.5.5"
+from htmldata import get_login_page
+__version__ = "1.6.0"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -30,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Configurazione
 
 # Default
-DB_PATH = os.path.join(SCRIPT_DIR, '..', 'telegram_bot', 'bookmarks.db')
+DB_PATH = get_db_path()
 PORT = 8443
 
 @contextmanager
@@ -44,6 +49,43 @@ def db_connection():
         conn.close()
 
 class BookmarkHandler(BaseHTTPRequestHandler):
+    def get_current_user(self):
+        """Verifica il cookie di sessione e restituisce l'ID utente se valido."""
+        cookies = SimpleCookie(self.headers.get('Cookie'))
+        session_id = cookies.get('session_id')
+
+        if not session_id:
+            return None
+
+        with db_connection() as cursor:
+            cursor.execute(
+                "SELECT user_id FROM sessions WHERE session_id = ? AND expires_at > ?",
+                (session_id.value, datetime.now())
+            )
+            result = cursor.fetchone()
+
+        return result[0] if result else None
+
+    def _redirect(self, path):
+        """Invia una risposta di reindirizzamento 302."""
+        self.send_response(302)
+        self.send_header('Location', path)
+        self.end_headers()
+
+    def _send_html_response(self, status_code, html_content):
+        """Helper per inviare risposte HTML."""
+        self.send_response(status_code)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(html_content.encode('utf-8'))
+
+    def do_AUTHHEAD(self):
+        """Metodo fittizio per gestire richieste di autenticazione non standard."""
+        self.send_response(401)
+        self.send_header('WWW-Authenticate', 'Basic realm=\"Test\"')
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+
     def do_GET(self):
         """
         Gestisce le richieste GET.
@@ -59,6 +101,24 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         """
         path = urlparse(self.path).path
 
+        if path == '/login':
+            self.serve_login_page()
+            return
+        elif path == '/logout':
+            self.handle_logout()
+            return
+
+        # Permetti l'accesso ai file statici senza autenticazione
+        if path.startswith('/static/'):
+            self.serve_static_file()
+            return
+
+        # Proteggi tutte le altre route
+        user_id = self.get_current_user()
+        if not user_id:
+            self._redirect('/login')
+            return
+
         if path == '/':
             self.serve_homepage()
         elif path == '/api/bookmarks':
@@ -69,8 +129,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             search_query = query_components.get("search", [None])[0]
             hide_read = query_components.get("hide_read", ['false'])[0].lower() == 'true'
             self.serve_bookmarks_api(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query)
-        elif path.startswith('/static/'):
-            self.serve_static_file()
         else:
             self._send_error_response(404, "Not Found")
 
@@ -83,9 +141,21 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         Se il percorso non è riconosciuto risponde con 404.
         """
-        if self.path == '/api/bookmarks':
+        path = urlparse(self.path).path
+
+        if path == '/login':
+            self.handle_login()
+            return
+
+        # Proteggi tutte le altre route
+        user_id = self.get_current_user()
+        if not user_id and path != '/login':
+            self._send_error_response(401, "Authentication required")
+            return
+
+        if path == '/api/bookmarks':
             self.add_bookmark()
-        elif self.path == '/api/scrape':
+        elif path == '/api/scrape':
             self.scrape_metadata()
         else:
             self._send_error_response(404, "Not Found")
@@ -102,6 +172,12 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         è un intero risponde 400. Se la route non è riconosciuta risponde 404.
         """
         logger.info(f"PUT request for: {self.path}")
+
+        user_id = self.get_current_user()
+        if not user_id:
+            self._send_error_response(401, "Authentication required")
+            return
+
         parts = urlparse(self.path).path.strip('/').split('/')
 
         # Supporta: /api/bookmarks/<id>  (update)
@@ -131,6 +207,12 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         In caso di successo chiama delete_bookmark che manda la risposta JSON.
         """
         logger.info(f"DELETE request for: {self.path}")
+
+        user_id = self.get_current_user()
+        if not user_id:
+            self._send_error_response(401, "Authentication required")
+            return
+
         parts = urlparse(self.path).path.strip('/').split('/')
 
         # Supporta: /api/bookmarks/<id>
@@ -144,6 +226,63 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self.delete_bookmark(bookmark_id)
         else:
             self._send_error_response(404, "Not Found")
+
+    def serve_login_page(self):
+        """Serve la pagina di login HTML."""
+        self._send_html_response(200, get_login_page())
+
+    def handle_login(self):
+        """Gestisce il tentativo di login da una richiesta POST."""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            credentials = parse_qs(post_data.decode('utf-8'))
+
+            username = credentials.get('username', [''])[0]
+            password = credentials.get('password', [''])[0]
+
+            with db_connection() as cursor:
+                cursor.execute("SELECT id, password_hash FROM users WHERE username = ?", (username,))
+                user = cursor.fetchone()
+
+            if user and check_password_hash(user[1], password):
+                session_id = secrets.token_hex(16)
+                expires_at = datetime.now() + timedelta(days=30)
+
+                with db_connection() as cursor:
+                    cursor.execute(
+                        "INSERT INTO sessions (session_id, user_id, expires_at) VALUES (?, ?, ?)",
+                        (session_id, user[0], expires_at)
+                    )
+
+                self.send_response(302)
+                self.send_header('Location', '/')
+                cookie = SimpleCookie()
+                cookie['session_id'] = session_id
+                cookie['session_id']['path'] = '/'
+                cookie['session_id']['expires'] = expires_at.strftime("%a, %d %b %Y %H:%M:%S GMT")
+                self.send_header('Set-Cookie', cookie.output(header='').lstrip())
+                self.end_headers()
+            else:
+                self._send_html_response(401, get_login_page(error="Credenziali non valide."))
+
+        except Exception as e:
+            logger.error(f"Errore durante il login: {e}")
+            self._send_html_response(500, get_login_page(error="Errore interno del server."))
+
+    def handle_logout(self):
+        """Gestisce il logout eliminando il cookie di sessione."""
+        cookies = SimpleCookie(self.headers.get('Cookie'))
+        session_id = cookies.get('session_id')
+
+        if session_id:
+            with db_connection() as cursor:
+                cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id.value,))
+
+        self.send_response(302)
+        self.send_header('Location', '/login')
+        self.send_header('Set-Cookie', 'session_id=; Path=/; Max-Age=0') # Cancella il cookie
+        self.end_headers()
 
     def serve_homepage(self):
         """
@@ -161,16 +300,13 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         # Per default, nasconde i letti, ma questo può essere sovrascritto dal JS lato client
         hide_read_default = True
 
-        bookmarks = self.get_bookmarks(limit=20, offset=0, filter_type=None, hide_read=hide_read_default)
+        bookmarks = self.get_bookmarks(self.get_current_user(), limit=20, offset=0, filter_type=None, hide_read=hide_read_default)
 
         # Il conteggio totale si riferisce sempre a tutti i bookmark nel DB
         total_count = self.get_total_bookmark_count(filter_type=None, hide_read=False)
         html = get_html(self, bookmarks, __version__, total_count)
 
-        self.send_response(200)
-        self.send_header('Content-type', 'text/html; charset=utf-8')
-        self.end_headers()
-        self.wfile.write(html.encode('utf-8'))
+        self._send_html_response(200, html)
 
     def _send_json_response(self, status_code, data):
         """Helper per inviare risposte JSON."""
@@ -387,7 +523,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         image_url, domain, saved_at, telegram_user_id, telegram_message_id,
         comments_url, is_read.
         """
-        bookmarks = self.get_bookmarks(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query)
+        bookmarks = self.get_bookmarks(self.get_current_user(), limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query)
 
         bookmark_list = [] # noqa
         for bookmark in bookmarks:
@@ -468,7 +604,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             params.append(bookmark_id)
 
             with db_connection() as cursor:
-                cursor.execute(f"UPDATE bookmarks SET {set_clause} WHERE id = ?", params)
+                cursor.execute(f"UPDATE bookmarks SET {set_clause} WHERE id = ? AND user_id = ?", params + [self.get_current_user()])
 
                 # Dopo l'aggiornamento, recupera il bookmark aggiornato per restituirlo
                 cursor.execute("""
@@ -515,7 +651,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                     is_read = 1 if data.get('is_read') else 0
 
             with db_connection() as cursor:
-                cursor.execute("UPDATE bookmarks SET is_read = ? WHERE id = ?", (int(is_read), bookmark_id))
+                cursor.execute("UPDATE bookmarks SET is_read = ? WHERE id = ? AND user_id = ?", (int(is_read), bookmark_id, self.get_current_user()))
             self._send_json_response(200, {'status': 'ok', 'is_read': is_read})
 
         except sqlite3.Error as e:
@@ -545,20 +681,22 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             if not url:
                 raise ValueError("URL è obbligatorio")
 
+            user_id = self.get_current_user()
             # Estrai dominio automaticamente
             domain = extract_domain(url)
 
             with db_connection() as cursor:
-                # Verifica se URL già existe (UNIQUE constraint)
-                cursor.execute("SELECT id FROM bookmarks WHERE url = ?", (url,))
+                # Verifica se URL già esiste per questo utente
+                cursor.execute("SELECT id FROM bookmarks WHERE url = ? AND user_id = ?", (url, user_id))
                 if cursor.fetchone():
                     self._send_error_response(409, "URL already exists")
                     return
 
                 cursor.execute("""
-                    INSERT INTO bookmarks (url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO bookmarks (user_id, url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
+                    user_id,
                     url,
                     data.get('title'),
                     data.get('description'),
@@ -608,7 +746,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         """Recupera il numero totale di bookmark dal database."""
         try:
             with db_connection() as cursor:
-                query, params = self._build_query_parts(filter_type, hide_read)
+                query, params = self._build_query_parts(self.get_current_user(), filter_type, hide_read)
                 cursor.execute(f"SELECT COUNT(*) FROM bookmarks WHERE {query}", params)
                 count = cursor.fetchone()[0]
             return count
@@ -616,10 +754,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             logger.error(f"Database error during count: {e}")
             return 0
 
-    def _build_query_parts(self, filter_type=None, hide_read=False, search_query=None):
+    def _build_query_parts(self, user_id, filter_type=None, hide_read=False, search_query=None):
         """
         Costruisce le clausole WHERE e i parametri per le query dei bookmark.
         Args:
+            user_id (int): L'ID dell'utente corrente.
             filter_type (str, optional): Filtro per 'telegram', 'hn', 'recent'.
             hide_read (bool, optional): Se True, esclude i bookmark letti.
             search_query (str, optional): Termine di ricerca testuale.
@@ -627,8 +766,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         Returns:
             tuple: Una stringa con le clausole WHERE e una lista di parametri.
         """
-        where_clauses = ["1=1"]
-        params = []
+        where_clauses = ["user_id = ?"]
+        params = [user_id]
 
         if filter_type == 'recent':
             where_clauses.append("saved_at >= datetime('now', '-7 days')")
@@ -642,13 +781,13 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         return " AND ".join(where_clauses), params
 
-    def get_bookmarks(self, limit=20, offset=0, filter_type=None, hide_read=False, search_query=None):
+    def get_bookmarks(self, user_id, limit=20, offset=0, filter_type=None, hide_read=False, search_query=None):
         """
         Recupera i bookmark dal database, applicando filtri e ricerca opzionali.
         """
         try:
             with db_connection() as cursor:
-                where_clause, params = self._build_query_parts(filter_type, hide_read, search_query)
+                where_clause, params = self._build_query_parts(user_id, filter_type, hide_read, search_query)
 
                 cursor.execute("""
                     SELECT id, url, title, description, image_url, domain,

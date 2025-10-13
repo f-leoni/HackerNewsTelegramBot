@@ -132,13 +132,23 @@ class BookmarkBot:
             from_user_id = getattr(message.from_user, "id", None)
             comments_url = comments_url_override if comments_url_override is not None else self.get_hn_comments_url(url)
 
+            # Recupera l'ID del primo utente del webserver per associare il bookmark
+            cursor.execute("SELECT id FROM users ORDER BY id LIMIT 1")
+            web_user = cursor.fetchone()
+            web_user_id = web_user[0] if web_user else None
+
+            if not web_user_id:
+                logger.error("Nessun utente trovato nel database. Impossibile associare il bookmark.")
+                return False
+
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO bookmarks 
-                (url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (user_id, url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
+                    web_user_id,
                     url,
                     metadata["title"],
                     metadata["description"],
