@@ -88,6 +88,16 @@ h1 {
     background: #0056b3;
 }
 
+.btn-primary {
+    background: #007bff;
+}
+.btn-primary:hover {
+    background: #0056b3;
+}
+.btn-secondary {
+    background: #6c757d;
+}
+
 /* Controlli vista */
 .view-controls {
     display: flex;
@@ -357,15 +367,6 @@ h1 {
     gap: 4px;
 }
 
-.telegram-badge {
-    background: #0088cc;
-    color: white;
-    padding: 2px 6px;
-    border-radius: 10px;
-    font-size: 10px;
-    font-weight: 500;
-}
-
 .hn-link {
     color: #ff6600;
     text-decoration: none;
@@ -380,25 +381,35 @@ h1 {
     text-decoration: underline;
 }
 
-/* Badge per vista normale */
-.bookmark-footer .telegram-badge {
-    padding: 3px 8px;
-    font-size: 0.7em;
-}
-
-.bookmark-footer .hn-link {
-    font-size: 0.8em;
-    gap: 4px;
+.search-container {
+    position: relative;
+    margin-bottom: 20px;
 }
 
 .search-box {
     width: 100%;
-    padding: 12px;
+    padding: 12px 40px 12px 20px; /* Aggiunto padding a destra per il pulsante */
     border: 2px solid #dee2e6;
     border-radius: 25px;
-    margin-bottom: 20px;
     font-size: 16px;
 }
+
+.clear-search-btn {
+    position: absolute;
+    top: 50%;
+    right: 15px;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    font-size: 24px;
+    color: #999;
+    cursor: pointer;
+    display: none; /* Nascosto di default, gestito da JS */
+    padding: 0 5px;
+    line-height: 1;
+}
+
+.clear-search-btn:hover { color: #333; }
 
 .search-box:focus {
     outline: none;
@@ -442,16 +453,6 @@ h1 {
     display: flex;
     gap: 8px;
     margin-bottom: 12px;
-}
-
-.filter-telegram {
-    background: #0088cc;
-    color: white;
-}
-
-.filter-hn {
-    background: #ff6600;
-    color: white;
 }
 
 footer {
@@ -679,4 +680,186 @@ html.dark-mode .close-btn:hover {
 
 html.dark-mode #loadingIndicator {
     color: #888;
+}
+
+html.dark-mode .clear-search-btn { color: #777; }
+html.dark-mode .clear-search-btn:hover { color: #ccc; }
+
+html.dark-mode .btn-secondary {
+    background-color: #5a6268;
+    border-color: #545b62;
+}
+
+html.dark-mode .modal-header {
+    border-bottom-color: var(--border-color);
+}
+
+html.dark-mode .modal-footer {
+    background-color: #232323;
+    border-top-color: var(--border-color);
+}
+
+/* --- MODAL STYLES --- */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.5);
+    animation: fadeIn 0.3s ease-out;
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 4% auto;
+    padding: 0;
+    border: none;
+    width: 80%;
+    max-width: 700px;
+    border-radius: 8px;
+    position: relative;
+    animation: slideDown 0.3s ease-out;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+    overflow: hidden;
+}
+
+.modal-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid #e9ecef;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #333;
+}
+
+html.dark-mode .modal-header h3 {
+    color: #f1f1f1;
+}
+
+.modal-body {
+    padding: 24px;
+}
+
+.modal-body form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.modal-footer {
+    padding: 16px 24px;
+    background-color: #f8f9fa;
+    border-top: 1px solid #e9ecef;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.modal-content .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.modal-content .form-group textarea {
+    height: auto;
+    min-height: 80px;
+}
+
+.close-btn {
+    color: #aaa;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.close-btn:hover, .close-btn:focus {
+    color: black;
+}
+
+.form-group input:focus, .form-group textarea:focus {
+    outline: none;
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+}
+
+.form-group-checkbox {
+    /* Allinea il gruppo verticalmente con gli altri campi che hanno un'etichetta sopra */
+    padding-top: 24px; 
+    align-self: center;
+}
+
+.form-group-checkbox label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500; /* Rende il testo meno pesante */
+    white-space: nowrap; /* Impedisce al testo di andare a capo */
+}
+
+.form-group-with-button .input-with-button {
+    display: flex;
+    gap: 8px;
+}
+
+.form-group-with-button input {
+    flex-grow: 1;
+}
+
+.btn-icon {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    font-size: 1.2rem;
+    background-color: #e9ecef;
+    color: #495057;
+    border: 1px solid #ced4da;
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideDown { from { transform: translateY(-30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* --- Back to Top Button --- */
+#backToTopBtn {
+    display: none; /* Nascosto di default */
+    position: fixed;
+    bottom: 20px;
+    right: 30px;
+    z-index: 99;
+    border: none;
+    outline: none;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    font-size: 24px;
+    line-height: 50px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    transition: opacity 0.3s, transform 0.3s;
+    opacity: 0;
+    transform: translateY(20px);
+}
+
+#backToTopBtn:hover {
+    background-color: #0056b3;
+}
+
+html.dark-mode #backToTopBtn {
+    background-color: var(--link-color);
+    color: #111;
 }

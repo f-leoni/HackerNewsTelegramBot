@@ -20,9 +20,12 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
 </head>
 <body>
     <div class="container">
-        <h1>📚 Zitzu's Bookmarks Bot  - v{version}</h1>
-
-        <input type="text" class="search-box" id="searchBox" placeholder="🔍 Cerca nei bookmark..." value="{search_value}">
+        <h1>📚 Zitzu's Bookmarks Bot</h1>
+        
+        <div class="search-container">
+            <input type="text" class="search-box" id="searchBox" placeholder="🔍 Cerca nei bookmark..." value="{search_value}">
+            <button type="button" id="clearSearchBtn" class="clear-search-btn" title="Cancella ricerca">&times;</button>
+        </div>
 
         <!-- Controlli vista -->
         <div class="view-controls">
@@ -31,12 +34,11 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
             </button>
             <button type="button" class="view-btn" id="viewToggleBtn" title="Cambia vista">📄 Vista Compatta</button>
             <button type="button" class="view-btn" id="themeToggleBtn" title="Cambia tema">🌙 Dark Mode</button>
+            <span><small>v{version}</small></span>
         </div>
 
         <!-- Filtri speciali -->
         <div class="special-filters">
-            <button class="filter-btn filter-telegram" onclick="filterSpecial('telegram', event)">📱 Solo Telegram</button>
-            <button class="filter-btn filter-hn" onclick="filterSpecial('hn', event)">🗞️ Con HackerNews</button>
             <button class="filter-btn" onclick="filterSpecial('recent', event)">🕐 Ultimi 7 giorni</button>
             <button class="filter-btn" id="hideReadBtn" onclick="toggleHideRead()">🙈 Nascondi Letti</button>
         </div>
@@ -68,46 +70,54 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
         <!-- Modale per la modifica -->
         <div id="editModal" class="modal">
             <div class="modal-content">
-                <span class="close-btn" onclick="closeEditModal()">&times;</span>
-                <h3 id="modalTitle">Modifica Bookmark</h3>
-                <form id="editBookmarkForm">
-                    <input type="hidden" id="edit-id" name="id">
-                    <div class="form-group">
-                        <label>URL: *</label>
-                        <input type="url" id="edit-url" name="url" required>
-                    </div>
-                    <div class="form-row">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Modifica Bookmark</h3>
+                    <span class="close-btn" onclick="closeEditModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <form id="editBookmarkForm">
+                        <input type="hidden" id="edit-id" name="id">
+                        <div class="form-group form-group-with-button">
+                            <label for="edit-url">URL: *</label>
+                            <div class="input-with-button">
+                                <input type="url" id="edit-url" name="url" required>
+                                <button type="button" class="btn btn-icon" id="scrapeBtn" title="Estrai metadati dall'URL">✨</button>
+                            </div>
+                        </div>
                         <div class="form-group" style="grid-column: 1 / -1;">
-                            <label>Titolo:</label>
+                            <label for="edit-title">Titolo:</label>
                             <input type="text" id="edit-title" name="title">
                         </div>
                         <div class="form-group">
-                            <label>URL Immagine:</label>
+                            <label for="edit-image_url">URL Immagine:</label>
                             <input type="url" id="edit-image_url" name="image_url">
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Descrizione:</label>
-                        <textarea id="edit-description" name="description"></textarea>
-                    </div>
-                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-description">Descrizione:</label>
+                            <textarea id="edit-description" name="description" rows="3"></textarea>
+                        </div>
                         <div class="form-group" style="grid-column: 1 / -1;">
-                            <label>URL HackerNews:</label>
+                            <label for="edit-comments_url">URL HackerNews:</label>
                             <input type="url" id="edit-comments_url" name="comments_url">
                         </div>
                         <div class="form-group">
-                            <label>Telegram User ID:</label>
+                            <label for="edit-telegram_user_id">Telegram User ID:</label>
                             <input type="number" id="edit-telegram_user_id" name="telegram_user_id">
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label><input type="checkbox" id="edit-is_read" name="is_read"> Già letto</label>
-                    </div>
-                    <button type="submit" class="btn">Salva Modifiche</button>
-                </form>
+                        <div class="form-group form-group-checkbox">
+                            <label><input type="checkbox" id="edit-is_read" name="is_read"> Già letto</label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" form="editBookmarkForm" class="btn btn-primary">Salva Modifiche</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Annulla</button>
+                </div>
             </div>
         </div>
     </div>
+
+    <button type="button" id="backToTopBtn" title="Torna su">↑</button>
 
     <script>
         // Pass initial data from server to JavaScript

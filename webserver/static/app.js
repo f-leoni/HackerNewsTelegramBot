@@ -200,17 +200,46 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('viewToggleBtn').addEventListener('click', toggleView);
     document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
 
+    const searchBox = document.getElementById('searchBox');
+    const clearSearchBtn = document.getElementById('clearSearchBtn');
 
-    document.getElementById('searchBox').addEventListener('input', function(e) {
+    searchBox.addEventListener('input', function(e) {
+        // Mostra/nascondi il pulsante di cancellazione
+        clearSearchBtn.style.display = e.target.value ? 'block' : 'none';
+
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
             triggerSearch();
         }, 300); // Debounce
     });
 
+    clearSearchBtn.addEventListener('click', () => {
+        searchBox.value = '';
+        clearSearchBtn.style.display = 'none';
+        triggerSearch();
+    });
+
+    const backToTopBtn = document.getElementById('backToTopBtn');
+
     window.addEventListener('scroll', () => {
+        // Infinite scroll
         if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 300) {
             loadMoreBookmarks();
+        }
+
+        // Back to top button visibility
+        if (window.scrollY > 300) {
+            if (backToTopBtn.style.display !== 'block') {
+                backToTopBtn.style.display = 'block';
+                requestAnimationFrame(() => {
+                    backToTopBtn.style.opacity = '1';
+                    backToTopBtn.style.transform = 'translateY(0)';
+                });
+            }
+        } else {
+            backToTopBtn.style.opacity = '0';
+            backToTopBtn.style.transform = 'translateY(20px)';
+            setTimeout(() => { if(window.scrollY <= 300) backToTopBtn.style.display = 'none'; }, 300);
         }
     });
 
@@ -232,6 +261,16 @@ document.addEventListener('DOMContentLoaded', function() {
             const bookmarkId = button.dataset.id;
             bookmarkMarkRead(bookmarkId);
         }
+    });
+
+    // Scrape button in modal
+    document.getElementById('scrapeBtn').addEventListener('click', async () => {
+        await scrapeAndFillData();
+    });
+
+    // Back to top click
+    backToTopBtn.addEventListener('click', () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     });
     
     // Load more if the initial content is not scrollable
@@ -332,6 +371,49 @@ editForm.addEventListener('submit', async function(e) {
     }
 });
 
+// --- SCRAPING LOGIC ---
+async function scrapeAndFillData() {
+    const urlInput = document.getElementById('edit-url');
+    let url = urlInput.value.trim();
+    if (!url) {
+        showToast("Inserisci un URL prima di estrarre i dati.", true);
+        return;
+    }
+
+    // Aggiunge 'https://' se manca un protocollo
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+        urlInput.value = url; // Aggiorna il campo di input per coerenza
+        showToast("Protocollo https:// aggiunto automaticamente.", false);
+    }
+
+    const scrapeBtn = document.getElementById('scrapeBtn');
+    const originalText = scrapeBtn.innerHTML;
+    scrapeBtn.innerHTML = '⏳';
+    scrapeBtn.disabled = true;
+
+    try {
+        const response = await fetch('/api/scrape', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url })
+        });
+
+        if (!response.ok) throw new Error('Scraping fallito');
+
+        const metadata = await response.json();
+        document.getElementById('edit-title').value = metadata.title || '';
+        document.getElementById('edit-description').value = metadata.description || '';
+        document.getElementById('edit-image_url').value = metadata.image_url || '';
+        showToast("Dati estratti con successo!");
+    } catch (error) {
+        showToast("Errore durante l'estrazione dei dati.", true);
+    } finally {
+        scrapeBtn.innerHTML = originalText;
+        scrapeBtn.disabled = false;
+    }
+}
+
 // --- API ACTIONS ---
 async function bookmarkDelete(id) {
     if (!confirm('Sei sicuro di voler eliminare questo bookmark?')) return;
@@ -405,7 +487,6 @@ function renderBookmarkCard(bookmark) {
     const imageHtml = bookmark.image_url
         ? `<img src="${bookmark.image_url}" alt="Preview" class="bookmark-image" onerror="this.style.display='none'">`
         : '<div class="bookmark-image" style="display: flex; align-items: center; justify-content: center; background: #f8f9fa; color: #6c757d;">🔗</div>';
-    const telegramBadge = bookmark.telegram_user_id ? '<span class="telegram-badge">📱 Telegram</span>' : '';
     const hnLink = bookmark.comments_url ? `<a href="${bookmark.comments_url}" target="_blank" class="hn-link">🗞️ HN</a>` : '';
     const bookmarkJson = JSON.stringify(bookmark).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
     
@@ -421,7 +502,6 @@ function renderBookmarkCard(bookmark) {
             ${imageHtml}
             <div class="bookmark-info">
                 <div class="bookmark-actions-top">
-                    ${telegramBadge}
                     ${hnLink}
                     <button class="icon-btn read" title="${readButtonTitle}" data-id="${bookmark.id}">${readButtonIcon}</button>
                     <button class="icon-btn edit" title="Modifica" data-bookmark='${bookmarkJson}'><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -443,7 +523,6 @@ function renderBookmarkCompactItem(bookmark) {
         ? `<img src="${bookmark.image_url}" alt="Preview" class="compact-image" onerror="this.innerHTML='🔗'">`
         : '<div class="compact-image">🔗</div>';
     let badgesHtml = '';
-    if (bookmark.telegram_user_id) badgesHtml += '<span class="telegram-badge">TG</span>';
     if (bookmark.comments_url) badgesHtml += `<a href="${bookmark.comments_url}" target="_blank" class="hn-link">HN</a>`;
     if (badgesHtml) badgesHtml = `<div class="compact-badges">${badgesHtml}</div>`;
     const shortDate = (bookmark.saved_at || '').split(' ')[0];
@@ -471,55 +550,3 @@ function renderBookmarkCompactItem(bookmark) {
         <div class="compact-date">${shortDate}</div>
     </div>`;
 }
-
-// --- MODAL STYLES ---
-const modalStyle = `
-    .modal {
-        display: none;
-        position: fixed;
-        z-index: 1000;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        overflow: auto;
-        background-color: rgba(0,0,0,0.5);
-    }
-    .modal-content {
-        background-color: #fefefe;
-        margin: 5% auto;
-        padding: 20px;
-        border: 1px solid #888;
-        width: 80%;
-        max-width: 700px;
-        border-radius: 8px;
-        position: relative;
-        animation: slideDown 0.3s ease-out;
-    }
-    .modal-content .form-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 15px;
-    }
-    .modal-content .form-group input, .modal-content .form-group textarea {
-        width: 100%;
-        padding: 10px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 14px;
-    }
-    .close-btn {
-        color: #aaa;
-        float: right;
-        font-size: 28px;
-        font-weight: bold;
-        cursor: pointer;
-    }
-    .close-btn:hover, .close-btn:focus {
-        color: black;
-    }
-`;
-const styleSheet = document.createElement("style");
-styleSheet.type = "text/css";
-styleSheet.innerText = modalStyle;
-document.head.appendChild(styleSheet);

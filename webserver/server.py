@@ -18,10 +18,10 @@ from contextlib import contextmanager
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
-from shared.utils import extract_domain
+from shared.utils import extract_domain, get_article_metadata
 from htmldata import get_html
 
-__version__ = "1.4.1"
+__version__ = "1.5.5"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -85,6 +85,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         """
         if self.path == '/api/bookmarks':
             self.add_bookmark()
+        elif self.path == '/api/scrape':
+            self.scrape_metadata()
         else:
             self._send_error_response(404, "Not Found")
 
@@ -239,10 +241,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             else:
                 image_html = '<div class="bookmark-image" style="display: flex; align-items: center; justify-content: center; background: #f8f9fa; color: #6c757d;">🔗</div>'
 
-            telegram_badge = ''
-            if bookmark[7]:  # telegram_user_id
-                telegram_badge = '<span class="telegram-badge">📱 Telegram</span>'
-
             hn_link = ''
             if bookmark[9]:  # comments_url (HackerNews)
                 hn_link = f'<a href="{bookmark[9]}" target="_blank" class="hn-link">🗞️ HN</a>'
@@ -275,8 +273,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 <div class="bookmark-header">
                     {image_html}
                     <div class="bookmark-info">
-                        <div class="bookmark-actions-top">
-                            {telegram_badge}
+                        <div class="bookmark-actions-top">                            
                             {hn_link}
                             <button class="icon-btn read" title="{read_button_title}" data-id="{bookmark_safe[0]}">{read_button_icon}</button>
                             <button class="icon-btn edit" title="Modifica" data-bookmark='{bookmark_json_html}'>
@@ -325,8 +322,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             badges_html = ''
             badges = []
-            if bookmark[7]:  # telegram_user_id
-                badges.append('<span class="telegram-badge">TG</span>')
             if bookmark[9]:  # comments_url (HackerNews)
                 badges.append(f'<a href="{bookmark[9]}" target="_blank" class="hn-link">HN</a>')
 
@@ -584,6 +579,31 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             logger.error(f"Error adding bookmark: {e}")
             self._send_error_response(500, "An internal error occurred")
 
+    def scrape_metadata(self):
+        """
+        Esegue lo scraping dei metadati da un URL fornito nel body della richiesta.
+        """
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length == 0:
+                self._send_error_response(400, "Request body is empty")
+                return
+
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            url = data.get('url')
+
+            if not url:
+                self._send_error_response(400, "URL is required")
+                return
+
+            metadata = get_article_metadata(url)
+            self._send_json_response(200, metadata)
+
+        except Exception as e:
+            logger.error(f"Error scraping metadata for URL {data.get('url', '')}: {e}")
+            self._send_error_response(500, "Failed to scrape metadata")
+
     def get_total_bookmark_count(self, filter_type=None, hide_read=False):
         """Recupera il numero totale di bookmark dal database."""
         try:
@@ -610,11 +630,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         where_clauses = ["1=1"]
         params = []
 
-        if filter_type == 'telegram':
-            where_clauses.append("telegram_user_id IS NOT NULL AND (comments_url IS NULL OR comments_url = '')")
-        elif filter_type == 'hn':
-            where_clauses.append("comments_url IS NOT NULL AND comments_url != ''")
-        elif filter_type == 'recent':
+        if filter_type == 'recent':
             where_clauses.append("saved_at >= datetime('now', '-7 days')")
 
         if hide_read:
