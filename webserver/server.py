@@ -26,7 +26,7 @@ from shared.utils import extract_domain, get_article_metadata
 from shared.database import get_db_path
 from htmldata import get_html
 from htmldata import get_login_page
-__version__ = "1.6.0"
+__version__ = "1.6.2"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -49,6 +49,10 @@ def db_connection():
         conn.close()
 
 class BookmarkHandler(BaseHTTPRequestHandler):
+    def version_string(self):
+        """Sovrascrive l'header 'Server' per non rivelare la versione del software."""
+        return "Web Server"
+
     def get_current_user(self):
         """Verifica il cookie di sessione e restituisce l'ID utente se valido."""
         cookies = SimpleCookie(self.headers.get('Cookie'))
@@ -66,15 +70,27 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         return result[0] if result else None
 
+    def _send_security_headers(self):
+        """Aggiunge gli header di sicurezza comuni a tutte le risposte."""
+        self.send_header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+        self.send_header('Referrer-Policy', 'strict-origin-when-cross-origin')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        # CSP: Consenti risorse dallo stesso dominio, immagini da https e stili/script inline.
+        # 'unsafe-inline' è necessario per gli stili e gli script gestiti dinamicamente.
+        csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; form-action 'self';"
+        self.send_header('Content-Security-Policy', csp)
+
     def _redirect(self, path):
         """Invia una risposta di reindirizzamento 302."""
         self.send_response(302)
+        self._send_security_headers()
         self.send_header('Location', path)
         self.end_headers()
 
     def _send_html_response(self, status_code, html_content):
         """Helper per inviare risposte HTML."""
         self.send_response(status_code)
+        self._send_security_headers()
         self.send_header('Content-type', 'text/html; charset=utf-8')
         self.end_headers()
         self.wfile.write(html_content.encode('utf-8'))
@@ -82,6 +98,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
     def do_AUTHHEAD(self):
         """Metodo fittizio per gestire richieste di autenticazione non standard."""
         self.send_response(401)
+        self._send_security_headers()
         self.send_header('WWW-Authenticate', 'Basic realm=\"Test\"')
         self.send_header('Content-type', 'text/html')
         self.end_headers()
@@ -311,6 +328,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
     def _send_json_response(self, status_code, data):
         """Helper per inviare risposte JSON."""
         self.send_response(status_code)
+        self._send_security_headers()
         self.send_header('Content-type', 'application/json; charset=utf-8')
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
@@ -319,6 +337,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         """Helper per inviare risposte di errore in formato JSON."""
         error_data = {'error': message}
         self.send_response(status_code)
+        self._send_security_headers()
         self.send_header('Content-type', 'application/json; charset=utf-8')
         self.end_headers()
         self.wfile.write(json.dumps(error_data, ensure_ascii=False).encode('utf-8'))
@@ -326,8 +345,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
     def serve_static_file(self):
         """Serve un file statico dalla cartella 'static'."""
         try:
-            # Costruisci un percorso sicuro per il file
-            # es. /static/app.js -> webserver/static/app.js
             static_path = os.path.join(SCRIPT_DIR, self.path.lstrip('/'))
 
             # Verifica che il percorso risolto sia effettivamente dentro la cartella 'static'
@@ -339,6 +356,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             if os.path.exists(static_path) and os.path.isfile(static_path):
                 content_type = 'application/javascript' if static_path.endswith('.js') else 'text/css'
                 self.send_response(200)
+                self._send_security_headers()
                 self.send_header('Content-type', content_type)
                 self.end_headers()
                 with open(static_path, 'rb') as f:

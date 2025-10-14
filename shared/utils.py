@@ -55,7 +55,7 @@ def get_article_metadata(url):
         except requests.exceptions.RequestException as e:
             logger.warning(f"Richiesta HEAD fallita per {url}: {e}. Procedo con GET.")
 
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
         response.raise_for_status()
 
         soup = BeautifulSoup(response.content, "html.parser")

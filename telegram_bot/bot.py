@@ -170,7 +170,7 @@ class BookmarkBot:
         """Setup degli event handlers"""
 
         @self.app.on_message(filters.private)
-        async def handle_saved_message(client, message):
+        async def handle_private_message(client, message):
             """Handler per messaggi nei salvati
             
             Questo gestore viene registrato all'interno di un metodo di istanza per avere accesso a `self`.
