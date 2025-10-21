@@ -1,37 +1,37 @@
 """
-Script per aggiungere un nuovo utente al database per il login al webserver.
+Script to add a new user to the database for webserver login.
 """
 import os
 import sys
 import getpass
 import sqlite3
 
-# Aggiungi la root del progetto al path per importare i moduli condivisi
+# Add the project root to the path to import shared modules
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
 
 from shared.database import get_db_path, init_database
 
 def add_user():
-    """Aggiunge un utente al database in modo interattivo."""
+    """Adds a user to the database interactively."""
     try:
         from werkzeug.security import generate_password_hash
     except ImportError:
-        print("ERRORE: La libreria 'werkzeug' non è installata.")
-        print("Esegui: pip install werkzeug")
+        print("ERROR: The 'werkzeug' library is not installed.")
+        print("Run: pip install werkzeug")
         sys.exit(1)
 
-    print("--- Creazione nuovo utente per il webserver ---")
-    username = input("Inserisci il nome utente: ").strip()
-    password = getpass.getpass("Inserisci la password: ")
-    password_confirm = getpass.getpass("Conferma la password: ")
+    print("--- Creating a new user for the webserver ---")
+    username = input("Enter username: ").strip()
+    password = getpass.getpass("Enter password: ")
+    password_confirm = getpass.getpass("Confirm password: ")
 
     if not username or not password:
-        print("❌ Nome utente e password non possono essere vuoti.")
+        print("❌ Username and password cannot be empty.")
         return
 
     if password != password_confirm:
-        print("❌ Le password non coincidono.")
+        print("❌ Passwords do not match.")
         return
 
     password_hash = generate_password_hash(password)
@@ -42,12 +42,12 @@ def add_user():
         cursor = conn.cursor()
         cursor.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, password_hash))
         conn.commit()
-        print(f"✅ Utente '{username}' creato con successo!")
+        print(f"✅ User '{username}' created successfully!")
     except sqlite3.IntegrityError:
-        print(f"❌ Errore: L'utente '{username}' esiste già.")
+        print(f"❌ Error: User '{username}' already exists.")
     finally:
         conn.close()
 
 if __name__ == '__main__':
-    init_database() # Assicura che la tabella esista
+    init_database() # Ensure the table exists
     add_user()

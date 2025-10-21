@@ -1,58 +1,58 @@
 services:
-  # Servizio per il bot Telegram
+  # Telegram bot service
   bot:
     build:
       context: .
-      dockerfile: Dockerfile # Usa il Dockerfile nella root
+      dockerfile: Dockerfile # Use the Dockerfile in the root
     container_name: hackernews-bot
-    # Riavvia sempre il container se si ferma
+    # Always restart the container if it stops
     restart: always
-    # Passa le variabili d'ambiente dal file .env del bot
+    # Pass environment variables from the bot's .env file
     env_file:
       - ./telegram_bot/.env
     volumes:
-      # Mappa la cartella locale del database (bind mount)
+      # Map the local database folder (bind mount)
       - ./shared/db:/app/shared/db
-      # Mappa un volume nominato per i file di sessione di Pyrogram in una cartella dedicata
+      # Map a named volume for Pyrogram session files in a dedicated folder
       - bot_session:/app/session
-    # Dipende dal servizio db_init per assicurarsi che il DB sia pronto
+    # Depends on the db_init service to ensure the DB is ready
     depends_on:
       - db_init
 
-  # Servizio per il webserver
+  # Webserver service
   webserver:
     build:
-      # Il contesto è la root del progetto, così può vedere sia 'webserver' che 'shared'
+      # The context is the project root, so it can see both 'webserver' and 'shared'
       context: .
-      # Specifichiamo il percorso del Dockerfile da usare
+      # Specify the path to the Dockerfile to use
       dockerfile: ./webserver/Dockerfile
     container_name: hackernews-webserver
     restart: always
-    # Aggiungi questa riga per caricare le variabili per il webserver
+    # Add this line to load variables for the webserver
     env_file:
       - ./webserver/.env
     ports:
-      # Mappa la porta 8443 del container alla porta 8443 del tuo server/PC
+      # Map port 8443 of the container to port 8443 of your server/PC
       - "8443:8443"
     volumes:
-      # Mappa la cartella locale del database (bind mount)
+      # Map the local database folder (bind mount)
       - ./shared/db:/app/shared/db
-      # Mappa un volume per i certificati SSL in una cartella dedicata per non nascondere il codice
+      # Map a volume for SSL certificates in a dedicated folder to avoid hiding the code
       - web_certs:/app/certs
     depends_on:
       - db_init
 
-  # Servizio "una tantum" per inizializzare/migrare il DB
+  # "One-off" service to initialize/migrate the DB
   db_init:
     build:
       context: .
-      # Specifichiamo di usare lo stesso Dockerfile del bot
+      # Specify to use the same Dockerfile as the bot
       dockerfile: Dockerfile
     command: python3 migrate_bookmarks.py
-    volumes: # Anche il servizio di inizializzazione deve vedere lo stesso DB
+    volumes: # The initialization service must also see the same DB
       - ./shared/db:/app/shared/db
 
 volumes:
-  # db_data non è più necessario perché usiamo un bind mount
+  # db_data is no longer needed because we use a bind mount
   bot_session:
   web_certs:

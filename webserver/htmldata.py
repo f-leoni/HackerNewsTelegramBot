@@ -1,9 +1,9 @@
 """
-Modulo per la generazione dell'HTML della pagina web.
+Module for generating the web page HTML.
 """
 
 def get_login_page(error=None):
-    """Genera l'HTML per la pagina di login."""
+    """Generates the HTML for the login page."""
     error_html = f'<div class="login-error">{error}</div>' if error else ''
     return f"""
 <!DOCTYPE html>
@@ -27,7 +27,7 @@ def get_login_page(error=None):
         <form action="/login" method="post">
             <div class="form-group"><label for="username">Username</label><input type="text" id="username" name="username" required></div>
             <div class="form-group"><label for="password">Password</label><input type="password" id="password" name="password" required></div>
-            <button type="submit" class="btn btn-primary" style="width: 100%;">Accedi</button>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>
         </form>
     </div>
 </body>
@@ -35,7 +35,7 @@ def get_login_page(error=None):
 """
 
 def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
-    # Funzione di escape per l'HTML per evitare problemi con le virgolette nei dati
+    # HTML escape function to avoid issues with quotes in data
     def escape_html(text):
         if text is None:
             return ""
@@ -56,56 +56,56 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
         <h1>📚 Zitzu's Bookmarks Bot</h1>
         
         <div class="search-container">
-            <input type="text" class="search-box" id="searchBox" placeholder="🔍 Cerca nei bookmark..." value="{search_value}">
-            <button type="button" id="clearSearchBtn" class="clear-search-btn" title="Cancella ricerca">&times;</button>
+            <input type="text" class="search-box" id="searchBox" placeholder="🔍 Search bookmarks..." value="{search_value}">
+            <button type="button" id="clearSearchBtn" class="clear-search-btn" title="Clear search">&times;</button>
         </div>
 
-        <!-- Controlli vista -->
+        <!-- View controls -->
         <div class="view-controls">
             <button type="button" class="view-btn add-bookmark-btn" onclick="openAddModal()">
-                ➕ Aggiungi Bookmark
+                ➕ Add Bookmark
             </button>
-            <button type="button" class="view-btn" id="viewToggleBtn" title="Cambia vista">📄 Vista Compatta</button>
-            <button type="button" class="view-btn" id="themeToggleBtn" title="Cambia tema">🌙</button>
+            <button type="button" class="view-btn" id="viewToggleBtn" title="Change view">📄 Compact View</button>
+            <button type="button" class="view-btn" id="themeToggleBtn" title="Change theme">🌙</button>
             <span><small>v{version}</small></span>
         </div>
 
-        <!-- Filtri speciali -->
+        <!-- Special filters -->
         <div class="special-filters">
-            <button class="filter-btn" onclick="filterSpecial('recent', event)">🕐 Ultimi 7 giorni</button>
-            <button class="filter-btn" id="hideReadBtn" onclick="toggleHideRead()">🙈 Nascondi Letti</button>
+            <button class="filter-btn" onclick="filterSpecial('recent', event)">🕐 Last 7 days</button>
+            <button class="filter-btn" id="hideReadBtn" onclick="toggleHideRead()">🙈 Hide Read</button>
             <a href="/logout" class="filter-btn">🚪 Logout</a>
         </div>
 
         <div class="filter-bar" id="filterBar">
-            <!-- I filtri verranno popolati dinamicamente -->
+            <!-- Filters will be populated dynamically -->
         </div>
 
         <div class="stats">
-            <strong id="visibleCount">{len(bookmarks)}</strong> di <strong id="totalCount">{total_count}</strong> bookmark totali
+            <strong id="visibleCount">{len(bookmarks)}</strong> of <strong id="totalCount">{total_count}</strong> total bookmarks
         </div>
 
-        <!-- Vista normale (cards) -->
+        <!-- Normal view (cards) -->
         <div class="bookmarks-grid" id="bookmarksGrid">
             {self.render_bookmarks(bookmarks)}
         </div>
 
-        <!-- Vista compatta -->
+        <!-- Compact view -->
         <div class="bookmarks-compact" id="bookmarksCompact">
             {self.render_bookmarks_compact(bookmarks)}
         </div>
 
-        <div id="loadingIndicator">Caricamento...</div>
+        <div id="loadingIndicator">Loading...</div>
 
         <footer>
             <p>Zitzu's Bookmarks Bot - v{version}</p>
         </footer>
 
-        <!-- Modale per la modifica -->
+        <!-- Edit modal -->
         <div id="editModal" class="modal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3 id="modalTitle">Modifica Bookmark</h3>
+                    <h3 id="modalTitle">Edit Bookmark</h3>
                     <span class="close-btn" onclick="closeEditModal()">&times;</span>
                 </div>
                 <div class="modal-body">
@@ -115,7 +115,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
                             <label for="edit-url">URL: *</label>
                             <div class="input-with-button">
                                 <input type="url" id="edit-url" name="url" required>
-                                <button type="button" class="btn btn-icon" id="scrapeBtn" title="Estrai metadati dall'URL">✨</button>
+                                <button type="button" class="btn btn-icon" id="scrapeBtn" title="Scrape metadata from URL">✨</button>
                             </div>
                         </div>
                         <div class="form-group" style="grid-column: 1 / -1;">
@@ -123,11 +123,11 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
                             <input type="text" id="edit-title" name="title">
                         </div>
                         <div class="form-group">
-                            <label for="edit-image_url">URL Immagine:</label>
+                            <label for="edit-image_url">Image URL:</label>
                             <input type="url" id="edit-image_url" name="image_url">
                         </div>
                         <div class="form-group">
-                            <label for="edit-description">Descrizione:</label>
+                            <label for="edit-description">Description:</label>
                             <textarea id="edit-description" name="description" rows="3"></textarea>
                         </div>
                         <div class="form-group" style="grid-column: 1 / -1;">
@@ -139,19 +139,19 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
                             <input type="number" id="edit-telegram_user_id" name="telegram_user_id">
                         </div>
                         <div class="form-group form-group-checkbox">
-                            <label><input type="checkbox" id="edit-is_read" name="is_read"> Già letto</label>
+                            <label><input type="checkbox" id="edit-is_read" name="is_read"> Already read</label>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="submit" form="editBookmarkForm" class="btn btn-primary">Salva Modifiche</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Annulla</button>
+                    <button type="submit" form="editBookmarkForm" class="btn btn-primary">Save Changes</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <button type="button" id="backToTopBtn" title="Torna su">↑</button>
+    <button type="button" id="backToTopBtn" title="Back to top">↑</button>
 
     <script>
         // Pass initial data from server to JavaScript

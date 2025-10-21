@@ -1,23 +1,23 @@
-# Immagine di base Python
+# Python base image
 FROM python:3.10-slim
 
-# Imposta la directory di lavoro nel container
+# Set the working directory in the container
 WORKDIR /app
 
-# Installa le dipendenze di sistema necessarie (se ce ne fossero)
+# Install necessary system dependencies (if any)
 # RUN apt-get update && apt-get install -y ...
 
-# Copia i file delle dipendenze prima del codice per sfruttare la cache di Docker
+# Copy dependency files before the code to leverage Docker's cache
 COPY telegram_bot/requirements.txt ./bot-requirements.txt
 COPY shared/requirements.txt ./shared-requirements.txt
 
-# Installa le dipendenze Python
+# Install Python dependencies
 RUN pip install --no-cache-dir -r bot-requirements.txt -r shared-requirements.txt
 
-# Copia il codice sorgente del bot e della libreria condivisa
+# Copy the source code of the bot and the shared library
 COPY telegram_bot/ /app/telegram_bot/
 COPY shared/ /app/shared/
 COPY migrate_bookmarks.py .
 
-# Comando di default per avviare il bot
+# Default command to start the bot
 CMD ["python3", "-m", "telegram_bot.bot"]

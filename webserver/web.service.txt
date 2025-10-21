@@ -1,5 +1,5 @@
 [Unit]
-Description=Companion Webserver to Bot telegram per il salvataggio di post dal gruppo HackerNews (ma non solo) su DB locale
+Description=Companion Webserver to Telegram Bot for saving posts from HackerNews group (and others) to a local DB
 After=multi-user.target
 
 [Service]
@@ -7,17 +7,17 @@ Type=idle
 User=zitzu
 # Group=zitzu
 
-# Imposta la directory di lavoro
+# Set the working directory
 WorkingDirectory=/home/zitzu/hackernewsbookmarks/webserver
 
-# Carica le variabili d'ambiente da un file specifico
+# Load environment variables from a specific file
 EnvironmentFile=/home/zitzu/hackernewsbookmarks/webserver/.env
 
 
-# Imposta il comando da eseguire
+# Set the command to execute
 ExecStart=/usr/bin/python3 /home/zitzu/hackernewsbookmarks/webserver/server.py > /home/zitzu/hackernewsbookmarks/webserver/web.service.log 2>&1
 
-# Riavvia automaticamente il servizio in caso di errore
+# Automatically restart the service in case of an error
 Restart=always
 RestartSec=60
 StandardOutput=syslog

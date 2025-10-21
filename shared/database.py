@@ -1,6 +1,6 @@
 """
-Modulo per la gestione centralizzata del database SQLite.
-Contiene la logica per l'inizializzazione e la migrazione dello schema.
+Module for centralized SQLite database management.
+Contains the logic for schema initialization and migration.
 """
 import os
 import sqlite3
@@ -11,19 +11,19 @@ logger = logging.getLogger(__name__)
 
 
 def get_db_path():
-    """Restituisce il percorso assoluto del file di database."""
-    # Il percorso della cartella che contiene questo script (es. /app/shared)
+    """Returns the absolute path of the database file."""
+    # The path of the folder containing this script (e.g., /app/shared)
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Il database deve trovarsi nella sottocartella 'db'
+    # The database must be in the 'db' subfolder
     db_dir = os.path.join(script_dir, "db")
-    os.makedirs(db_dir, exist_ok=True) # Assicura che la cartella esista
+    os.makedirs(db_dir, exist_ok=True) # Ensure the folder exists
     return os.path.join(db_dir, "bookmarks.db")
 
 
 def init_database():
     """
-    Inizializza il database, crea la tabella se non esiste ed esegue le migrazioni.
-    Questa è l'unica fonte di verità per lo schema del DB.
+    Initializes the database, creates the table if it doesn't exist, and runs migrations.
+    This is the single source of truth for the DB schema.
     """
     db_path = get_db_path()
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -48,7 +48,7 @@ def init_database():
         )
     """)
 
-    # Crea la tabella degli utenti
+    # Create the users table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +57,7 @@ def init_database():
         )
     """)
 
-    # Crea la tabella delle sessioni
+    # Create the sessions table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
             session_id TEXT PRIMARY KEY,
@@ -67,7 +67,7 @@ def init_database():
         )
     """)
 
-    # Logica di migrazione
+    # Migration logic
     try:
         cursor.execute("PRAGMA table_info(bookmarks)")
         columns = [col[1] for col in cursor.fetchall()]

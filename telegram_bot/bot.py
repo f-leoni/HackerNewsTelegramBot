@@ -1,5 +1,5 @@
 """
-Modulo principale del bot Telegram per il salvataggio di bookmark.
+Main module of the Telegram bot for saving bookmarks.
 """
 import os
 import sys
@@ -9,7 +9,7 @@ from pyrogram import Client, filters
 from datetime import datetime
 from urllib.parse import urlparse
 
-# Aggiungi la root del progetto al path per importare la libreria condivisa
+# Add the project root to the path to import the shared library
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from shared.database import init_database, get_db_path
@@ -21,11 +21,11 @@ __version__ = "1.0"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Import dinamico per compatibilità ---
+# --- Dynamic import for compatibility ---
 from dotenv import load_dotenv
 from pyrogram.enums import ChatType, MessageEntityType
 
-# Cerca StringSession in percorsi comuni per supportare diverse versioni di Pyrogram
+# Search for StringSession in common paths to support different Pyrogram versions
 StringSession = None
 for path in ('pyrogram.storage.storage', 'pyrogram.sessions.string_session', 'pyrogram.sessions', 'pyrogram.storage'):
     try:
@@ -37,7 +37,7 @@ for path in ('pyrogram.storage.storage', 'pyrogram.sessions.string_session', 'py
 
 class BookmarkBot:
     def __init__(self):
-        # Carica variabili ambiente
+        # Load environment variables
 
         load_dotenv()
         try:
@@ -49,11 +49,11 @@ class BookmarkBot:
 
         self.api_id = os.getenv("API_ID")
         self.api_hash = os.getenv("API_HASH")
-        # Credenziali opzionali: BOT_TOKEN per account bot, o SESSION_STRING per evitare login interattivo
+        # Optional credentials: BOT_TOKEN for bot account, or SESSION_STRING to avoid interactive login
         self.bot_token = os.getenv("BOT_TOKEN")
         self.session_string = os.getenv("SESSION_STRING")
 
-        # Log di debug: mostra quali variabili d'ambiente per l'autenticazione sono presenti
+        # Debug log: show which authentication environment variables are present
         logger.info(
             "Auth env presence: BOT_TOKEN=%s, SESSION_STRING=%s, API_ID=%s, API_HASH=%s",
             "yes" if self.bot_token else "no",
@@ -62,48 +62,48 @@ class BookmarkBot:
             "yes" if self.api_hash else "no",
         )
 
-        # Inizializza il client Pyrogram. Per Docker, sono supportate solo modalità non interattive.
+        # Initialize the Pyrogram client. For Docker, only non-interactive modes are supported.
         if self.bot_token:
-            # Modalità Bot: usa un BOT_TOKEN. Non richiede API_ID/HASH se non per funzioni specifiche.
+            # Bot Mode: use a BOT_TOKEN. Does not require API_ID/HASH except for specific functions.
             logger.info("Auth mode: BOT_TOKEN (bot account)")
             self.app = Client(
-                name="bookmark_bot_session", # Nome sessione per il bot
+                name="bookmark_bot_session", # Session name for the bot
                 api_id=self.api_id,
                 api_hash=self.api_hash,
                 bot_token=self.bot_token
             )
         elif self.session_string:
-            # Modalità Utente non interattiva: usa una SESSION_STRING.
+            # Non-interactive User Mode: use a SESSION_STRING.
             logger.info("Auth mode: SESSION_STRING (user session)")
             if not self.api_id or not self.api_hash:
-                raise ValueError("SESSION_STRING richiede che anche API_ID e API_HASH siano impostati nel file .env.")
+                raise ValueError("SESSION_STRING requires API_ID and API_HASH to also be set in the .env file.")
             self.app = Client(
-                name="bookmark_bot_session", # Un nome di sessione coerente
+                name="bookmark_bot_session", # A consistent session name
                 session_string=self.session_string,
                 api_id=self.api_id,
                 api_hash=self.api_hash,
             )
         else:
-            # Se nessuna delle due modalità è configurata, il bot non può partire.
+            # If neither mode is configured, the bot cannot start.
             raise ValueError(
-                "Nessuna modalità di autenticazione valida per Docker. Imposta BOT_TOKEN o SESSION_STRING nel file .env."
+                "No valid authentication mode for Docker. Set BOT_TOKEN or SESSION_STRING in the .env file."
             )
 
-        # Inizializza database
-        init_database() # Assicura che il DB e le tabelle esistano all'avvio
+        # Initialize database
+        init_database() # Ensure the DB and tables exist on startup
 
-        # Registra handlers
+        # Register handlers
         self.setup_handlers()
 
     def extract_urls(self, text):
-        """Estrae URL dal testo del messaggio"""
+        """Extracts URLs from the message text"""
         url_pattern = re.compile(
             r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
         )
         return url_pattern.findall(text)
 
     def get_hn_comments_url(self, url):
-        """Se l'URL è di Hacker News, restituisce il link ai commenti."""
+        """If the URL is from Hacker News, returns the link to the comments."""
         parsed_url = urlparse(url)
         if parsed_url.netloc == "news.ycombinator.com":
             query_params = dict(p.split('=') for p in parsed_url.query.split('&') if '=' in p)
@@ -113,7 +113,7 @@ class BookmarkBot:
         return None
 
     def save_bookmark(self, url, metadata, message, comments_url_override=None):
-        """Salva il bookmark nel database"""
+        """Saves the bookmark to the database"""
         db_path = get_db_path()
         conn = None
         try:
@@ -122,13 +122,13 @@ class BookmarkBot:
             from_user_id = getattr(message.from_user, "id", None)
             comments_url = comments_url_override if comments_url_override is not None else self.get_hn_comments_url(url)
 
-            # Recupera l'ID del primo utente del webserver per associare il bookmark
+            # Retrieve the ID of the first webserver user to associate the bookmark
             cursor.execute("SELECT id FROM users ORDER BY id LIMIT 1")
             web_user = cursor.fetchone()
             web_user_id = web_user[0] if web_user else None
 
             if not web_user_id:
-                logger.error("Nessun utente trovato nel database. Impossibile associare il bookmark.")
+                logger.error("No user found in the database. Cannot associate bookmark.")
                 return False
 
             cursor.execute(
@@ -150,28 +150,28 @@ class BookmarkBot:
                 ),
             )
             conn.commit()
-            logger.info(f"Bookmark salvato: {metadata['title']}")
+            logger.info(f"Bookmark saved: {metadata['title']}")
             return True
         except Exception as e:
-            logger.error(f"Errore nel salvare bookmark: {e}")
+            logger.error(f"Error saving bookmark: {e}")
             return False
         finally:
             if conn:
                 conn.close()
 
     def setup_handlers(self):
-        """Setup degli event handlers"""
+        """Setup event handlers"""
 
         @self.app.on_message(filters.private)
         async def handle_private_message(client, message):
-            """Handler per messaggi nei salvati
+            """Handler for messages in saved messages
             
-            Questo gestore viene registrato all'interno di un metodo di istanza per avere accesso a `self`.
-            Analizza i messaggi in arrivo ed estrae URL da testo, didascalie, anteprime (web_page)
-            e dalle "entità" del messaggio, per supportare anche i messaggi inoltrati.
+            This handler is registered within an instance method to have access to `self`.
+            It analyzes incoming messages and extracts URLs from text, captions, previews (web_page),
+            and from the message "entities", to also support forwarded messages.
             """
 
-            # Log di debug: riassume le informazioni del messaggio in arrivo per facilitare la diagnosi.
+            # Debug log: summarizes incoming message information for easier diagnosis.
             try:
                 logger.info(
                     "Incoming message: chat_id=%s from_id=%s forward_from=%s text_len=%s caption_len=%s web_page=%s ents=%s cap_ents=%s",
@@ -187,36 +187,36 @@ class BookmarkBot:
             except Exception:
                 logger.info("Incoming message received (could not serialize fields)")
 
-            # Memorizza l'ID dell'utente/bot alla prima chiamata (necessario per la modalità utente)
+            # Store the user/bot ID on the first call (necessary for user mode)
             if not hasattr(self, "_my_user_id") or self._my_user_id is None:
                 me = await client.get_me()
                 self._my_user_id = me.id
                 logger.info("Running as user: %s (ID: %s)", getattr(me, 'username', 'N/A'), me.id)
 
-            # Se eseguito come bot, processa solo i messaggi ricevuti in chat privata.
+            # If running as a bot, only process messages received in a private chat.
             if self.bot_token:
-                logger.info("-> Controllo modalità BOT")
+                logger.info("-> Checking BOT mode")
                 if not message.chat or message.chat.type != ChatType.PRIVATE:
-                    # Ignora messaggi da gruppi o canali per default
+                    # Ignore messages from groups or channels by default
                     logger.info("Bot mode: ignoring non-private chat (type: %s)", message.chat.type)
                     return
-                logger.info("-> OK: Chat privata. Procedo con l'analisi del messaggio.")
+                logger.info("-> OK: Private chat. Proceeding with message analysis.")
                 await self.process_message_for_urls(message)
             else:
-                logger.info("-> Controllo modalità USER (sessione utente)")
-                # La verifica per i "Messaggi Salvati" è stata rimossa.
-                # Ora il bot processerà i messaggi da qualsiasi chat privata.
-                logger.info("-> OK: Procedo con l'analisi del messaggio in chat privata.")
+                logger.info("-> Checking USER mode (user session)")
+                # The check for "Saved Messages" has been removed.
+                # The bot will now process messages from any private chat.
+                logger.info("-> OK: Proceeding with message analysis in private chat.")
                 await self.process_message_for_urls(message)
 
     async def process_message_for_urls(self, message):
         """Extracts and processes URLs from a given message."""
-        logger.info("--> Entrato in process_message_for_urls")
+        logger.info("--> Entered process_message_for_urls")
 
-        # Cerca URL nel messaggio (supporta testo, didascalie e web_page)
+        # Search for URLs in the message (supports text, captions, and web_page)
         urls = []
 
-        # Cerca URL nelle entità del messaggio (text or caption)
+        # Search for URLs in the message entities (text or caption)
         entities_source = None
         if getattr(message, "entities", None):
             entities_source = message.text or ""
@@ -224,7 +224,7 @@ class BookmarkBot:
             entities_source = message.caption or ""
 
         if entities_source:
-            logger.info("--> Analizzo 'entità' del messaggio per URL...")
+            logger.info("--> Analyzing message 'entities' for URLs...")
             ents = (
                 message.entities
                 if getattr(message, "entities", None)
@@ -238,20 +238,20 @@ class BookmarkBot:
                 elif entity.type == MessageEntityType.TEXT_LINK:
                     urls.append(entity.url)
 
-        # Se non abbiamo trovato URL nelle entità, proviamo a prenderlo dall'anteprima web.
-        # Questo evita duplicati quando un link è sia nel testo che nell'anteprima.
+        # If we didn't find URLs in the entities, try to get it from the web preview.
+        # This avoids duplicates when a link is in both the text and the preview.
         if not urls and getattr(message, "web_page", None) and getattr(
             message.web_page, "url", None
         ):
-            logger.info("--> Nessun URL nelle entità, uso quello da web_page (anteprima link)")
+            logger.info("--> No URL in entities, using the one from web_page (link preview)")
             urls.append(message.web_page.url)
 
-        # Processa ogni URL trovato (rimuovendo duplicati)
+        # Process each found URL (removing duplicates)
         if urls:
             unique_urls = sorted(list(set(urls)))
-            logger.info("Trovati %d URL unici: %s", len(unique_urls), unique_urls)
+            logger.info("Found %d unique URLs: %s", len(unique_urls), unique_urls)
             
-            # Logica per accoppiare link articolo e commenti HN
+            # Logic to pair article links and HN comments
             hn_url = None
             article_url = None
             other_urls = []
@@ -262,55 +262,55 @@ class BookmarkBot:
                 else:
                     other_urls.append(url)
             
-            # Se troviamo esattamente un link HN e un altro link, li trattiamo come una coppia.
+            # If we find exactly one HN link and one other link, we treat them as a pair.
             if hn_url and len(other_urls) == 1:
                 article_url = other_urls[0]
 
             if article_url and hn_url:
-                # Caso speciale: un solo bookmark per la coppia articolo + commenti HN
-                logger.info(f"---> Rilevato pattern Hacker News: Articolo={article_url}, Commenti={hn_url}")
-                # Estrai metadati dall'articolo e dalla pagina HN usando la funzione condivisa
+                # Special case: a single bookmark for the article + HN comments pair
+                logger.info(f"---> Hacker News pattern detected: Article={article_url}, Comments={hn_url}")
+                # Extract metadata from the article and the HN page using the shared function
                 article_metadata = get_article_metadata(article_url)
                 hn_metadata = get_article_metadata(hn_url)
 
-                # Unisci le informazioni: descrizione da HN, il resto dall'articolo
+                # Merge the information: description from HN, the rest from the article
                 metadata = article_metadata
                 if hn_metadata.get("description"):
                     metadata["description"] = hn_metadata["description"]
 
-                logger.info(f"---> Salvando bookmark singolo nel DB...")
+                logger.info(f"---> Saving single bookmark to DB...")
                 success = self.save_bookmark(article_url, metadata, message, comments_url_override=hn_url)
-                # Se il salvataggio va a buon fine, invia la risposta ed esci
-                # per evitare di processare i link singolarmente.
+                # If saving is successful, send the reply and exit
+                # to avoid processing the links individually.
                 if success:
-                    await message.reply(f"📖 **Bookmark HN salvato!**\n📰 {metadata['title']}\n🔗 {metadata['domain']}")
-                    return # Abbiamo finito, usciamo dalla funzione
+                    await message.reply(f"📖 **HN Bookmark saved!**\n📰 {metadata['title']}\n🔗 {metadata['domain']}")
+                    return # We are done, exit the function
 
-            # Logica precedente per tutti gli altri casi (link singoli o multipli non HN)
+            # Previous logic for all other cases (single or multiple non-HN links)
             saved_count = 0
             saved_metadata = []
             for url in unique_urls:
-                logger.info(f"---> Processando URL: {url}")
+                logger.info(f"---> Processing URL: {url}")
                 metadata = get_article_metadata(url)
-                logger.info(f"---> Salvando bookmark nel DB...")
+                logger.info(f"---> Saving bookmark to DB...")
                 success = self.save_bookmark(url, metadata, message)
                 if success:
                     saved_count += 1
                     saved_metadata.append(metadata)
             
             if saved_count > 0:
-                logger.info(f"---> Salvati {saved_count} bookmark con successo. Invio risposta.")
+                logger.info(f"---> Successfully saved {saved_count} bookmarks. Sending reply.")
                 if saved_count == 1:
                     meta = saved_metadata[0]
-                    reply_text = f"📖 **Bookmark salvato!**\n📰 {meta['title']}\n🔗 {meta['domain']}"
+                    reply_text = f"📖 **Bookmark saved!**\n📰 {meta['title']}\n🔗 {meta['domain']}"
                 else:
-                    reply_text = f"📖 **Salvati {saved_count} bookmarks!**"
+                    reply_text = f"📖 **Saved {saved_count} bookmarks!**"
                 await message.reply(reply_text)
         else:
-            logger.info("--> Nessun URL trovato nel messaggio. Fine elaborazione.")
+            logger.info("--> No URL found in the message. End of processing.")
 
     def export_bookmarks_html(self, filename="bookmarks.html"):
-        """Esporta i bookmark in formato HTML"""
+        """Exports bookmarks to HTML format"""
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM bookmarks ORDER BY saved_at DESC")
         bookmarks = cursor.fetchall()
@@ -355,16 +355,16 @@ class BookmarkBot:
         with open(filename, "w", encoding="utf-8") as f:
             f.write(html_content)
 
-        logger.info(f"Bookmarks esportati in {filename}")
+        logger.info(f"Bookmarks exported to {filename}")
         return filename
 
     def run(self):
-        """Avvia il bot"""
-        logger.info("Avvio del bot...")
+        """Starts the bot"""
+        logger.info("Starting the bot...")
         try:
             self.app.run()
         except AttributeError as e:
-            # Fornisce un messaggio di errore più chiaro per una comune errata configurazione dell'autenticazione
+            # Provides a clearer error message for a common misconfiguration of authentication
             logger.error("Pyrogram AttributeError during start: %s", e)
             logger.error(
                 "This usually means the client attempted a new authorization but API_ID/API_HASH were not available."
@@ -378,8 +378,8 @@ class BookmarkBot:
 if __name__ == "__main__":
     bot = BookmarkBot()
 
-    # Esporta bookmark esistenti (opzionale)
+    # Export existing bookmarks (optional)
     # bot.export_bookmarks_html()
 
-    # Avvia il bot
+    # Start the bot
     bot.run()
