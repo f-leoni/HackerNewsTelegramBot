@@ -1,113 +1,137 @@
-# Hacker News & Link Bookmark Bot
+# HackerNews Bookmarks Bot
 
-A complete bookmarking solution that combines a **Telegram bot** for quickly saving links and a **web interface** to browse, search, and manage your collection.
+A Telegram bot and a companion web server to save and manage bookmarks from HackerNews and other websites. The application is fully containerized using Docker for easy setup and deployment.
 
 ## Features
 
-### Telegram Bot
-- **Link Capturing**: Automatically saves links sent to a private chat with the bot or in your "Saved Messages".
-- **Metadata Fetching**: Extracts the title, description, and preview image for each link.
-- **Hacker News Integration**: Intelligently pairs Hacker News comment links with their corresponding articles, saving them as a single bookmark.
-- **SQLite Backend**: Stores all bookmarks in a local, portable SQLite database.
+*   **Telegram Bot**: Save links directly from your "Saved Messages" or any private chat with the bot.
+*   **Web Interface**: A modern web UI to view, search, filter, and manage your bookmarks.
+*   **Metadata Scraping**: Automatically fetches the title, description, and preview image for each link.
+*   **HackerNews Integration**: Special handling for HackerNews links to associate an article with its comments page.
+*   **Multi-user Support**: The web interface supports multiple users, and bookmarks are associated with a specific user.
+*   **Dockerized**: All services (bot, webserver, database migration) are containerized for a consistent and isolated environment.
 
-### Web Server
-- **Modern Web Interface**: A web-based UI to browse, search, and manage your bookmarks.
-- **Multiple Views**: Choose between a detailed "Card View" and a denser "Compact View".
-- **Powerful Search & Filtering**: Instantly search all your bookmarks by text, or filter by source (Telegram, Hacker News), date, and read status.
-- **Full CRUD Functionality**: Add, edit, and delete bookmarks directly from the web interface.
-- **Infinite Scrolling**: Bookmarks are loaded as you scroll down the page.
-- **HTTPS Support**: Runs a secure server with either Let's Encrypt or self-signed certificates.
+---
 
-## Architecture
+## 🇮🇹 Istruzioni per l'Avvio con Docker
 
-The project is divided into three main components:
-- `telegram_bot/`: Contains the logic for the Telegram bot that captures links.
-- `webserver/`: Contains the web server and the front-end user interface.
-- `shared/`: A shared library with database access logic and utility functions used by both components.
+### Prerequisiti
 
-## Setup and Installation
+*   [Docker](https://www.docker.com/get-started)
+*   [Docker Compose](https://docs.docker.com/compose/install/)
 
-### 1. Prerequisites
-- Python 3.8+
-- `pip` and `venv`
+### 1. Configurazione
 
-### 2. Installation
+Prima di avviare l'applicazione, è necessario configurare alcune variabili d'ambiente.
 
-1.  **Clone the repository:**
-    ```sh
-    git clone <YOUR_REPOSITORY_URL>
-    cd HackerNewsTelegramBot
-    ```
+#### a. Configura il Bot
 
-2.  **Create and activate a virtual environment:**
-    ```sh
-    python -m venv venv
-    # Windows
-    .\venv\Scripts\Activate.ps1
-    # macOS/Linux
-    source venv/bin/activate
-    ```
+Crea un file chiamato `.env` all'interno della cartella `telegram_bot/`.
 
-3.  **Install dependencies:**
-    The project has dependencies for both the bot and the server. Make sure to install both.
-    ```sh
-    pip install -r telegram_bot/requirements.txt
-    pip install -r webserver/requirements.txt
-    ```
+```bash
+# Esempio di file: telegram_bot/.env
 
-### 3. Configuration
+API_ID=1234567
+API_HASH=abcdef1234567890abcdef1234567890
+BOT_TOKEN=1234567890:ABC-DEF1234567890ABC-DEF1234567890
 
-Create a `.env` file in the project's root directory by copying the example:
-
-```powershell
-copy .env.example .env
+# Imposta il nome utente del webserver a cui il bot assocerà i bookmark
+WEB_USERNAME=my_web_user
 ```
 
-2) Create a `.env` file in the project root (or set environment variables) with your Telegram API credentials. You can copy the included example:
+*   `API_ID` e `API_HASH`: Ottienili da my.telegram.org.
+*   `BOT_TOKEN`: Ottienilo da @BotFather su Telegram.
+*   `WEB_USERNAME`: Inserisci il nome utente che creerai per l'interfaccia web (vedi passo successivo).
 
-```powershell
-copy .env.example .env
+#### b. Crea un Utente per il Webserver
+
+Il bot ha bisogno di un utente del webserver a cui associare i bookmark. Esegui lo script `add_user.py` per creare questo utente.
+
+1.  Installa la dipendenza necessaria (solo per questo script):
+    ```bash
+    pip install werkzeug
+    ```
+
+2.  Esegui lo script e segui le istruzioni per creare un utente. **Assicurati che il nome utente corrisponda a `WEB_USERNAME`** impostato nel file `.env` del bot.
+    ```bash
+    python add_user.py
+    ```
+
+### 2. Avvio dell'Applicazione
+
+Dalla cartella principale del progetto, esegui questo comando:
+
+```bash
+docker-compose up --build -d
 ```
 
-Then edit `.env` and fill your credentials:
+Questo comando:
+*   `--build`: Ricostruisce le immagini Docker per includere le tue configurazioni.
+*   `-d`: Avvia i container in background (detached mode).
+
+### 3. Accesso
+
+*   **Web Interface**: Apri il browser e vai su **`https://localhost:8443`**.
+    *   Il browser mostrerà un avviso di sicurezza a causa del certificato autofirmato. Accetta il rischio e procedi.
+    *   Effettua il login con le credenziali che hai creato con `add_user.py`.
+
+*   **Telegram Bot**: Avvia una chat con il tuo bot su Telegram e inviagli dei link. Appariranno istantaneamente nell'interfaccia web!
+
+### 4. Fermare l'Applicazione
+
+Per fermare tutti i container, esegui:
+
+```bash
+docker-compose down
+```
+
+Questo comando ferma e rimuove i container e la rete, ma **non cancella i dati** salvati nei volumi (database, sessione del bot e certificati SSL).
+
+---
+
+## 🇬🇧 English Instructions (Docker)
+
+### Prerequisites
+
+*   Docker
+*   Docker Compose
+
+### 1. Setup
+
+**a. Configure the Bot:** Create a file named `.env` inside the `telegram_bot/` folder with your Telegram API credentials and the target web user.
 
 ```ini
-API_ID=your_api_id
-API_HASH=your_api_hash
+# Example file: telegram_bot/.env
+API_ID=...
+API_HASH=...
+BOT_TOKEN=...
+WEB_USERNAME=my_web_user
 ```
 
-3) Run the bot (it uses a Pyrogram session named `bookmark_bot`). You can run directly or use the provided PowerShell helper:
+**b. Create a Web User:** The bot needs a webserver user to associate bookmarks with. Run the `add_user.py` script. Make sure the username you create matches the `WEB_USERNAME` you set in the bot's `.env` file.
 
-Direct:
-
-```powershell
-python telegram_bot/bot.py
+```bash
+# Install dependency (for this script only)
+pip install werkzeug
+# Run the script and follow the prompts
+python add_user.py
 ```
 
-With helper (creates a venv, installs deps and runs):
+### 2. Run the Application
 
-```powershell
-.\run_bot.ps1
+From the project root directory, run:
+```bash
+docker-compose up --build -d
 ```
 
-Usage
+### 3. Access
 
-- Save or forward a message containing a URL to your Saved Messages (the account that runs this script). The bot will detect the URL, scrape metadata and save it to `bookmarks.db`. It replies to the message with a confirmation when a bookmark is saved.
+*   **Web Interface**: Open your browser and navigate to **`https://localhost:8443`**. You will see a security warning due to the self-signed certificate; please proceed. Log in with the credentials you created.
+*   **Telegram Bot**: Start a chat with your bot on Telegram and send it links. They will appear in the web interface.
 
-Notes and troubleshooting
+### 4. Stop the Application
 
-- The bot expects `API_ID` and `API_HASH` to be set. If missing, the script raises a ValueError.
-- The provided `telegram_bot/requirements.txt` includes some dependencies; you may need to install `pyrogram`, `python-dotenv`, `requests` and `beautifulsoup4` if not already present.
-- The SQLite database file (`bookmarks.db`) is created in the working directory.
-
-Interactive session creation (auth) issues
-
-- If you see the client prompt "Enter phone number or bot token" when starting and then an error like:
-	"'BadMsgNotification' object has no attribute 'type'", this often means the auth flow was interrupted by the debugger or your system time is out-of-sync.
-- To generate a user session safely, run the included helper from a normal PowerShell terminal:
-
-```powershell
-python telegram_bot/generate_session.py
+To stop all services, run:
+```bash
+docker-compose down
 ```
-
-This script will load API_ID/API_HASH from `.env` and start an interactive login that creates a local `.session` file. If the helper reports the BadMsgNotification error, follow its printed suggestions (sync clock, run outside debugger, update Pyrogram/tgcrypto).
