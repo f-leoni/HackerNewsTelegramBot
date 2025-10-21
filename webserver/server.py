@@ -877,15 +877,12 @@ def main():
     Gestisce KeyboardInterrupt per chiudere ordinatamente il server.
     """
     # --- Logica Certificati ---
-    cert_file = os.path.join(SCRIPT_DIR, 'server.pem')
-    key_file = os.path.join(SCRIPT_DIR, 'server.key')
-
     le_domain = os.getenv('LE_DOMAIN', None)
     logger.info(f"LE_DOMAIN letto come '{le_domain}'")
 
     if le_domain:
-        #le_cert_dir = f'/etc/letsencrypt/live/{le_domain}'
-        le_cert_dir = '..'
+        # Percorso standard per i certificati Let's Encrypt in un ambiente Linux/Docker
+        le_cert_dir = f'/etc/letsencrypt/live/{le_domain}'
         le_fullchain = os.path.join(le_cert_dir, 'fullchain.pem')
         le_privkey = os.path.join(le_cert_dir, 'privkey.pem')
 
@@ -897,13 +894,16 @@ def main():
             logger.warning(f"LE_DOMAIN impostato ma certificati non trovati o non leggibili in {le_cert_dir}")
             logger.warning("Verifica i permessi o il percorso. Procedo con certificati locali.")
     else:
+        # LE_DOMAIN non è impostato, usa certificati locali autofirmati.
         logger.info("LE_DOMAIN non impostato. Uso certificati locali.")
+        cert_dir = os.path.join(SCRIPT_DIR, 'certs')
+        os.makedirs(cert_dir, exist_ok=True)
+        cert_file = os.path.join(cert_dir, 'server.pem')
+        key_file = os.path.join(cert_dir, 'server.key')
 
-    # Crea certificato se necessario
-    if not (os.path.exists(cert_file) and os.path.exists(key_file)):
-        print("Certificati non trovati. Provo a generarli...")
-        create_self_signed_cert(cert_file, key_file)
-
+        # Crea certificato se necessario
+        if not (os.path.exists(cert_file) and os.path.exists(key_file)):
+            create_self_signed_cert(cert_file, key_file)
 
     # Configura il server
     server_address = ('', PORT)

@@ -62,48 +62,35 @@ class BookmarkBot:
             "yes" if self.api_hash else "no",
         )
 
-        # Inizializza il client Pyrogram in una delle tre modalità:
-        # 1) BOT_TOKEN: avvia come account bot. Nota: i bot non hanno accesso ai "Messaggi Salvati".
-        # 2) SESSION_STRING: usa una sessione pre-generata (non richiede login interattivo).
-        # 3) Fallback: sessione utente standard, che potrebbe richiedere il login al primo avvio.
+        # Inizializza il client Pyrogram. Per Docker, sono supportate solo modalità non interattive.
         if self.bot_token:
-            # Modalità Bot: usa un nome di sessione dedicato. Pyrogram gestirà la creazione
-            # e il riutilizzo del file .session corrispondente.
+            # Modalità Bot: usa un BOT_TOKEN. Non richiede API_ID/HASH se non per funzioni specifiche.
             logger.info("Auth mode: BOT_TOKEN (bot account)")
-
-            self.app = Client("bookmark_bot_bot", api_id=self.api_id, api_hash=self.api_hash, bot_token=self.bot_token)
-        elif self.session_string:
-            # Modalità StringSession: evita il login interattivo.
-            # Richiede che API_ID e API_HASH siano comunque presenti.
-            if not self.api_id or not self.api_hash:
-                raise ValueError(
-                    "SESSION_STRING requires API_ID and API_HASH to be set in .env"
-                )
-            if not StringSession:
-                raise ImportError("Could not import StringSession. Please upgrade Pyrogram: pip install -U pyrogram")
-            logger.info("Auth mode: SESSION_STRING (user session)")
             self.app = Client(
-                name="bookmark_bot_string_session",
+                name="bookmark_bot_session", # Nome sessione per il bot
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+                bot_token=self.bot_token
+            )
+        elif self.session_string:
+            # Modalità Utente non interattiva: usa una SESSION_STRING.
+            logger.info("Auth mode: SESSION_STRING (user session)")
+            if not self.api_id or not self.api_hash:
+                raise ValueError("SESSION_STRING richiede che anche API_ID e API_HASH siano impostati nel file .env.")
+            self.app = Client(
+                name="bookmark_bot_session", # Un nome di sessione coerente
                 session_string=self.session_string,
                 api_id=self.api_id,
                 api_hash=self.api_hash,
             )
         else:
-            if not self.api_id or not self.api_hash:
-                raise ValueError(
-                    "API_ID e API_HASH devono essere impostati nel file .env (or set SESSION_STRING or BOT_TOKEN)"
-                )
-            # Modalità interattiva: il client potrebbe chiedere il numero di telefono al primo avvio.
-            logger.info(
-                "Auth mode: INTERACTIVE user session (will prompt for phone on first run)"
-            )
-            self.app = Client(
-                "bookmark_bot", api_id=self.api_id, api_hash=self.api_hash
+            # Se nessuna delle due modalità è configurata, il bot non può partire.
+            raise ValueError(
+                "Nessuna modalità di autenticazione valida per Docker. Imposta BOT_TOKEN o SESSION_STRING nel file .env."
             )
 
         # Inizializza database
-        self.conn = init_database()
-        self.db_path = get_db_path()
+        init_database() # Assicura che il DB e le tabelle esistano all'avvio
 
         # Registra handlers
         self.setup_handlers()
@@ -127,8 +114,11 @@ class BookmarkBot:
 
     def save_bookmark(self, url, metadata, message, comments_url_override=None):
         """Salva il bookmark nel database"""
+        db_path = get_db_path()
+        conn = None
         try:
-            cursor = self.conn.cursor()
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
             from_user_id = getattr(message.from_user, "id", None)
             comments_url = comments_url_override if comments_url_override is not None else self.get_hn_comments_url(url)
 
@@ -159,12 +149,15 @@ class BookmarkBot:
                     comments_url,
                 ),
             )
-            self.conn.commit()
+            conn.commit()
             logger.info(f"Bookmark salvato: {metadata['title']}")
             return True
         except Exception as e:
             logger.error(f"Errore nel salvare bookmark: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
 
     def setup_handlers(self):
         """Setup degli event handlers"""

@@ -12,8 +12,12 @@ logger = logging.getLogger(__name__)
 
 def get_db_path():
     """Restituisce il percorso assoluto del file di database."""
+    # Il percorso della cartella che contiene questo script (es. /app/shared)
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(script_dir, "bookmarks.db")
+    # Il database deve trovarsi nella sottocartella 'db'
+    db_dir = os.path.join(script_dir, "db")
+    os.makedirs(db_dir, exist_ok=True) # Assicura che la cartella esista
+    return os.path.join(db_dir, "bookmarks.db")
 
 
 def init_database():

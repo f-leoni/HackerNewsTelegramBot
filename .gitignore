@@ -1,4 +1,4 @@
-.env
+*.env
 changePermissions.sh
 bookmark_bot_working.session
 bookmark_bot.session
