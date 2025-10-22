@@ -10,7 +10,7 @@ check_server.sh
 function.zip
 homepage.html
 oci_function.py
-privato.txt
+*.txt
 server.err
 *.db
 *.key
