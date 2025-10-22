@@ -929,7 +929,7 @@ def main():
 🚀 HTTPS Server started!
 
 📍 Access from:
-   • https://oc.zitzu.it:{PORT}
+   • https://www.mydomain.com:{PORT}
    • https://127.0.0.1:{PORT}
    • https://{local_ip}:{PORT}
 
