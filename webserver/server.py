@@ -890,11 +890,12 @@ def main():
             cert_file = le_fullchain
             key_file = le_privkey
         else:
-            logger.warning(f"LE_DOMAIN is set but certificates were not found or are not readable in {le_cert_dir}")
-            logger.warning("Check permissions or path. Proceeding with local certificates.")
-    else:
-        # LE_DOMAIN is not set, using local self-signed certificates.
-        logger.info("LE_DOMAIN not set. Using local certificates.")
+            logger.warning(f"LE_DOMAIN is set but certificates were not found in {le_cert_dir}. Falling back to self-signed certs.")
+            le_domain = None # Force fallback to self-signed
+
+    if not le_domain:
+        # Fallback to local self-signed certificates if LE_DOMAIN is not set or certs are not found.
+        logger.info("Using local self-signed certificates.")
         cert_dir = os.path.join(SCRIPT_DIR, 'certs')
         os.makedirs(cert_dir, exist_ok=True)
         cert_file = os.path.join(cert_dir, 'server.pem')
@@ -925,11 +926,14 @@ def main():
     except Exception:
         local_ip = "IP_NOT_AVAILABLE"
 
+    # Determine the primary access URL for the log message
+    access_url = f"https://{le_domain}:{PORT}" if le_domain else f"https://www.mydomain.com:{PORT}"
+
     logger.info(f"""
 🚀 HTTPS Server started!
 
 📍 Access from:
-   • https://www.mydomain.com:{PORT}
+   • {access_url}
    • https://127.0.0.1:{PORT}
    • https://{local_ip}:{PORT}
 

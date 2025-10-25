@@ -36,6 +36,17 @@ for path in ('pyrogram.storage.storage', 'pyrogram.sessions.string_session', 'py
 
 
 class BookmarkBot:
+    """
+    A Telegram bot that saves bookmarks from messages containing URLs.
+    
+    This bot monitors messages (in Saved Messages when running as user, or in private 
+    chat when running as bot) and extracts URLs to save them as bookmarks with metadata.
+    
+    Attributes:
+        app (Client): The Pyrogram client instance used to interact with Telegram.
+        _me_id (int): Cached user ID of the running client (set after first lookup).
+    """
+
     def __init__(self):
         # Load environment variables
 
@@ -96,14 +107,64 @@ class BookmarkBot:
         self.setup_handlers()
 
     def extract_urls(self, text):
-        """Extracts URLs from the message text"""
-        url_pattern = re.compile(
-            r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
-        )
-        return url_pattern.findall(text)
+        """
+        Extracts and normalizes URLs from text content.
+
+        Finds URLs in text and ensures they have proper protocol (adds https:// if missing).
+        Validates URL structure and filters out invalid or malformed URLs.
+
+        Args:
+            text (str): The text content to scan for URLs.
+
+        Returns:
+            list[str]: List of normalized valid URLs found in the text.
+            Empty list if no valid URLs found or text is None/empty.
+        """
+        urls = []
+        
+        if not text:
+            return urls
+            
+        # Check for URLs in text
+        for word in text.split():
+            # Skip words that are too short to be URLs
+            if len(word) < 3:
+                continue
+                
+            # Clean up the URL by removing trailing punctuation
+            word = word.rstrip(',.!?:;\'\"')
+            
+            # If URL doesn't start with a protocol, add https://
+            if not word.startswith(('http://', 'https://')):
+                if '://' in word:  # Has some other protocol
+                    continue
+                # Add https:// only if word looks like a domain
+                if '.' in word and not word.startswith('.'): 
+                    word = 'https://' + word
+                    
+            try:
+                # Validate URL structure
+                result = urlparse(word)
+                if result.netloc:
+                    urls.append(word)
+            except Exception as e:
+                logger.debug(f"Failed to parse URL {word}: {e}")
+                
+        return urls
 
     def get_hn_comments_url(self, url):
-        """If the URL is from Hacker News, returns the link to the comments."""
+        """
+        Extracts the Hacker News comments URL from an article URL if possible.
+
+        Attempts to find the HN comments page URL by checking URL patterns and
+        querying the HN API when needed.
+
+        Args:
+            url (str): The URL to check for HN comments.
+
+        Returns:
+            str: The HN comments URL if found, None otherwise.
+        """
         parsed_url = urlparse(url)
         if parsed_url.netloc == "news.ycombinator.com":
             query_params = dict(p.split('=') for p in parsed_url.query.split('&') if '=' in p)
@@ -113,7 +174,22 @@ class BookmarkBot:
         return None
 
     def save_bookmark(self, url, metadata, message, comments_url_override=None):
-        """Saves the bookmark to the database"""
+        """
+        Saves a URL as a bookmark in the database with metadata.
+
+        Stores the URL, metadata (title, description etc.), message info and optional
+        comments URL in the bookmarks database. Associates the bookmark with the first
+        web user found in the database.
+
+        Args:
+            url (str): The URL to bookmark.
+            metadata (dict): Metadata for the URL (title, description etc.).
+            message (Message): The Telegram message containing the URL.
+            comments_url_override (str, optional): Override the auto-detected comments URL.
+
+        Returns:
+            bool: True if bookmark was saved successfully, False otherwise.
+        """
         db_path = get_db_path()
         conn = None
         try:
@@ -160,7 +236,15 @@ class BookmarkBot:
                 conn.close()
 
     def setup_handlers(self):
-        """Setup event handlers"""
+        """
+        Configures message handlers for the bot.
+
+        Sets up handlers to process messages:
+        - For user sessions: monitors Saved Messages
+        - For bot mode: processes messages in private chats
+        
+        The handlers extract URLs from messages and save them as bookmarks.
+        """
 
         @self.app.on_message(filters.private)
         async def handle_private_message(client, message):
@@ -210,7 +294,19 @@ class BookmarkBot:
                 await self.process_message_for_urls(message)
 
     async def process_message_for_urls(self, message):
-        """Extracts and processes URLs from a given message."""
+        """
+        Processes a message to extract and save URLs as bookmarks.
+
+        Extracts URLs from message text/caption/entities, gets metadata for each URL,
+        and saves them as bookmarks. Also attempts to find HN comments URLs when 
+        relevant.
+
+        Args:
+            message (Message): The Telegram message to process.
+
+        Returns:
+            None
+        """
         logger.info("--> Entered process_message_for_urls")
 
         # Search for URLs in the message (supports text, captions, and web_page)
@@ -359,19 +455,17 @@ class BookmarkBot:
         return filename
 
     def run(self):
-        """Starts the bot"""
-        logger.info("Starting the bot...")
+        """Start the bot with error handling for time sync issues."""
         try:
+            logger.info("Starting the bot...")
             self.app.run()
-        except AttributeError as e:
-            # Provides a clearer error message for a common misconfiguration of authentication
-            logger.error("Pyrogram AttributeError during start: %s", e)
-            logger.error(
-                "This usually means the client attempted a new authorization but API_ID/API_HASH were not available."
-            )
-            logger.error(
-                "If you intended to run as a bot, set BOT_TOKEN in .env. If you use a user session string, set SESSION_STRING and also API_ID/API_HASH."
-            )
+        except Exception as e:
+            if "BadMsgNotification" in str(e):
+                logger.error("Time synchronization error detected. Please run as admin:")
+                logger.error("    w32tm /resync /force")
+                logger.error("If that fails, run:")
+                logger.error("    net start w32time")
+                logger.error("    w32tm /resync /force")
             raise
 
 

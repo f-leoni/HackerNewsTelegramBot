@@ -10,8 +10,8 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Configurabili dall'ambiente (es. export BOOKMARK_SERVICE=myapp.service)
-BOOKMARK_SERVICE=${BOOKMARK_SERVICE:-bookmark.service}
+# Il nome del servizio systemd da riavviare dopo il rinnovo
+BOOKMARK_SERVICE=${BOOKMARK_SERVICE:-hackernewsweb.service}
 CERT_GROUP=${CERT_GROUP:-ssl-cert}
 DRY_RUN=${DRY_RUN:-}
 
@@ -74,6 +74,10 @@ fi
 
 # Apply to real files in archive (robust with -print0 + xargs -0)
 if [[ -d "$ARCH_DIR" ]]; then
+  # IMPORTANT: Grant group execute permissions on the archive directory
+  # This allows the service user to traverse the directory to read the certs.
+  run_cmd "chgrp $CERT_GROUP \"$ARCH_DIR\""
+  run_cmd "chmod 750 \"$ARCH_DIR\""
   # privkey files
   if find "$ARCH_DIR" -type f -name 'privkey*.pem' -print0 | xargs -0 -r echo >/dev/null 2>&1; then
     run_cmd "find \"$ARCH_DIR\" -type f -name 'privkey*.pem' -print0 | xargs -0 -r chgrp $CERT_GROUP"
