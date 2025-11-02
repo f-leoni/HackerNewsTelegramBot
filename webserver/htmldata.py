@@ -49,6 +49,9 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zitzu's HackerNews Bot</title>
+    <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+    <link rel="alternate icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/static/img/favicon.svg">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>

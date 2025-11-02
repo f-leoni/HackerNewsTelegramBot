@@ -28,7 +28,7 @@ from shared.utils import extract_domain, get_article_metadata
 from shared.database import get_db_path
 from htmldata import get_html
 from htmldata import get_login_page
-__version__ = "1.7.0"
+__version__ = "1.7.1"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -165,6 +165,9 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self.serve_bookmarks_api(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query, sort_order=sort_order)
         elif path == '/api/export/csv':
             self.serve_export_csv()
+        elif path == '/favicon.ico':
+            self.path = '/static/img/favicon.svg' # Reindirizza la richiesta standard alla nostra SVG
+            self.serve_static_file()
         else:
             self._send_error_response(404, "Not Found")
 
@@ -372,7 +375,14 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 return
 
             if os.path.exists(static_path) and os.path.isfile(static_path):
-                content_type = 'application/javascript' if static_path.endswith('.js') else 'text/css'
+                if static_path.endswith('.js'):
+                    content_type = 'application/javascript'
+                elif static_path.endswith('.css'):
+                    content_type = 'text/css'
+                elif static_path.endswith('.svg'):
+                    content_type = 'image/svg+xml'
+                else:
+                    content_type = 'application/octet-stream' # Fallback generico
                 self.send_response(200)
                 self._send_security_headers()
                 self.send_header('Content-type', content_type)

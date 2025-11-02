@@ -64,9 +64,9 @@ function toggleView() {
 
 // --- SORTING ---
 function toggleSort() {
-    sortOrder = sortOrder === 'desc' ? 'asc' : 'desc';
-    updateSortButton();
-    triggerSearch();
+    sortOrder = (sortOrder === 'desc') ? 'asc' : 'desc';
+    updateSortButton(); // Aggiorna il testo del pulsante
+    triggerSearch(); // Ricarica i bookmark con il nuovo ordinamento
 }
 
 function updateSortButton() {
