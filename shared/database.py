@@ -5,10 +5,25 @@ Contains the logic for schema initialization and migration.
 import os
 import sqlite3
 import logging
+from datetime import datetime
 
 __version__ = "1.0"
 logger = logging.getLogger(__name__)
 
+# --- Datetime Adapters for SQLite ---
+# As of Python 3.12, the default datetime adapters are deprecated.
+# We register explicit adapters to ensure future compatibility.
+
+def adapt_datetime_iso(val):
+    """Adapter to convert datetime object to ISO 8601 string."""
+    return val.isoformat()
+
+def convert_timestamp(val):
+    """Converter to parse ISO 8601 string back to datetime object."""
+    return datetime.fromisoformat(val.decode())
+
+sqlite3.register_adapter(datetime, adapt_datetime_iso)
+sqlite3.register_converter("timestamp", convert_timestamp)
 
 def get_db_path():
     """Returns the absolute path of the database file."""
@@ -26,7 +41,7 @@ def init_database():
     This is the single source of truth for the DB schema.
     """
     db_path = get_db_path()
-    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES, check_same_thread=False)
     cursor = conn.cursor()
 
     cursor.execute("""

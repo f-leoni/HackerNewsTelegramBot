@@ -3,7 +3,7 @@ Module for generating the web page HTML.
 """
 import json
 
-def get_login_page(error=None):
+def get_login_page(self, error=None):
     """Generates the HTML for the login page."""
     error_html = f'<div class="login-error">{error}</div>' if error else ''
     return f"""
@@ -17,7 +17,7 @@ def get_login_page(error=None):
     <link rel="alternate icon" href="/favicon.ico" type="image/x-icon">
     <link rel="apple-touch-icon" href="/static/img/favicon.svg">
     <link rel="stylesheet" href="/static/style.css">
-    <style>
+    <style nonce="{self.nonce}">
         body {{ display: flex; align-items: center; justify-content: center; }}
         .login-container {{ background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }}
         .login-container h1 {{ margin-top: 0; }}
@@ -31,7 +31,7 @@ def get_login_page(error=None):
         <form action="/login" method="post">
             <div class="form-group"><label for="username">Username</label><input type="text" id="username" name="username" required></div>
             <div class="form-group"><label for="password">Password</label><input type="password" id="password" name="password" required></div>
-            <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>
+            <button type="submit" class="btn btn-primary w-100">Login</button>
         </form>
     </div>
 </body>
@@ -69,13 +69,13 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
 
         <!-- View controls -->
         <div class="view-controls">
-            <button type="button" class="view-btn add-bookmark-btn" onclick="openAddModal()" title="{translations.get('tooltip_add_bookmark', 'Add bookmark')}">
+            <button type="button" class="view-btn add-bookmark-btn" id="addBookmarkBtn" title="{translations.get('tooltip_add_bookmark', 'Add bookmark')}">
                 {translations.get('add_bookmark', 'Add Bookmark')}
             </button>
             <button type="button" class="view-btn" id="sortToggleBtn" title="{translations.get('tooltip_change_sort', 'Change sort order')}">{translations.get('sort_newest', 'Newest First')}</button>
             <button type="button" class="view-btn" id="viewToggleBtn" title="{translations.get('tooltip_change_view', 'Change view')}">{translations.get('compact_view', 'Compact View')}</button>
             <button type="button" class="view-btn" id="themeToggleBtn" title="{translations.get('tooltip_change_theme', 'Change theme')}">{translations.get('dark_mode', 'Dark Mode')}</button>
-            <select id="langSelector" class="view-btn" onchange="window.location.href='/?lang=' + this.value" title="{translations.get('tooltip_change_language', 'Change language')}">
+            <select id="langSelector" class="view-btn" title="{translations.get('tooltip_change_language', 'Change language')}">
                 <option value="en" {'selected' if self.get_user_language() == 'en' else ''}>🇬🇧 English</option>
                 <option value="it" {'selected' if self.get_user_language() == 'it' else ''}>🇮🇹 Italiano</option>
             </select>
@@ -84,8 +84,8 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
 
         <!-- Special filters -->
         <div class="special-filters">
-            <button class="filter-btn" onclick="filterSpecial('recent', event)" title="{translations.get('tooltip_filter_7_days', 'Filter...')}">{translations.get('filter_7_days', 'Last 7 days')}</button>
-            <button class="filter-btn" id="hideReadBtn" onclick="toggleHideRead()" title="{translations.get('tooltip_toggle_read', 'Toggle read...')}">{translations.get('hide_read', 'Hide Read')}</button>
+            <button class="filter-btn" data-filter="recent" title="{translations.get('tooltip_filter_7_days', 'Filter...')}">{translations.get('filter_7_days', 'Last 7 days')}</button>
+            <button class="filter-btn" id="hideReadBtn" title="{translations.get('tooltip_toggle_read', 'Toggle read...')}">{translations.get('hide_read', 'Hide Read')}</button>
             <a href="/api/export/csv" class="filter-btn" download="bookmarks.csv" target="_blank" title="{translations.get('tooltip_export_csv', 'Export...')}">{translations.get('export_csv', 'Export CSV')}</a>
             <a href="/logout" class="filter-btn" title="{translations.get('tooltip_logout', 'Logout...')}">{translations.get('logout', 'Logout')}</a>
         </div>
@@ -100,12 +100,12 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
 
         <!-- Normal view (cards) -->
         <div class="bookmarks-grid" id="bookmarksGrid">
-            {self.render_bookmarks(bookmarks)}
+            {self.render_bookmarks(bookmarks, translations)}
         </div>
 
         <!-- Compact view -->
         <div class="bookmarks-compact" id="bookmarksCompact">
-            {self.render_bookmarks_compact(bookmarks)}
+            {self.render_bookmarks_compact(bookmarks, translations)}
         </div>
 
         <div id="loadingIndicator">{translations.get('loading', 'Loading...')}</div>
@@ -115,11 +115,11 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
         </footer>
 
         <!-- Edit modal -->
-        <div id="editModal" class="modal">
+        <div id="editModal" class="modal hidden">
             <div class="modal-content">
                 <div class="modal-header">
                     <h3 id="modalTitle">{translations.get('modal_edit_title', 'Edit Bookmark')}</h3>
-                    <span class="close-btn" onclick="closeEditModal()" title="{translations.get('tooltip_close_modal', 'Close')}">&times;</span>
+                    <span class="close-btn" id="closeModalBtn" title="{translations.get('tooltip_close_modal', 'Close')}">&times;</span>
                 </div>
                 <div class="modal-body">
                     <form id="editBookmarkForm">
@@ -131,7 +131,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                                 <button type="button" class="btn btn-icon" id="scrapeBtn" title="{translations.get('tooltip_scrape', 'Scrape...')}">✨</button>
                             </div>
                         </div>
-                        <div class="form-group" style="grid-column: 1 / -1;">
+                        <div class="form-group full-width-grid-column">
                             <label for="edit-title">Title:</label>
                             <input type="text" id="edit-title" name="title" title="{translations.get('tooltip_modal_title', 'Title...')}">
                         </div>
@@ -143,7 +143,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                             <label for="edit-description">Description:</label>
                             <textarea id="edit-description" name="description" rows="3" title="{translations.get('tooltip_modal_description', 'Description...')}"></textarea>
                         </div>
-                        <div class="form-group" style="grid-column: 1 / -1;">
+                        <div class="form-group full-width-grid-column">
                             <label for="edit-comments_url">HackerNews URL:</label>
                             <input type="url" id="edit-comments_url" name="comments_url" title="{translations.get('tooltip_modal_hn_url', 'HN URL...')}">
                         </div>
@@ -158,7 +158,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                 </div>
                 <div class="modal-footer">
                     <button type="submit" form="editBookmarkForm" class="btn btn-primary" title="{translations.get('tooltip_save_changes', 'Save...')}">{translations.get('save_changes', 'Save Changes')}</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()" title="{translations.get('tooltip_discard_changes', 'Cancel...')}">{translations.get('cancel', 'Cancel')}</button>
+                    <button type="button" class="btn btn-secondary" id="cancelModalBtn" title="{translations.get('tooltip_discard_changes', 'Cancel...')}">{translations.get('cancel', 'Cancel')}</button>
                 </div>
             </div>
         </div>
@@ -166,7 +166,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
 
     <button type="button" id="backToTopBtn" title="{translations.get('tooltip_back_to_top', 'Back to top')}">↑</button>
 
-    <script>
+    <script nonce="{self.nonce}">
         // Pass initial data from server to JavaScript
         window.APP_CONFIG = {{
             'initialCount': {len(bookmarks)},

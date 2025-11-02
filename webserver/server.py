@@ -28,7 +28,7 @@ from shared.utils import extract_domain, get_article_metadata
 from shared.database import get_db_path
 from htmldata import get_html
 from htmldata import get_login_page
-__version__ = "1.7.3"
+__version__ = "1.8.0"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -43,7 +43,7 @@ PORT = 8443
 @contextmanager
 def db_connection():
     """Context manager to handle database connections safely."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
     try:
         yield conn.cursor()
         conn.commit()
@@ -70,9 +70,13 @@ def load_translations(lang_code):
         return load_translations(DEFAULT_LANGUAGE)
 
 class BookmarkHandler(BaseHTTPRequestHandler):
+    # Override server_version to prevent revealing Python version
+    server_version = "Web Server"
+
     def version_string(self):
         """Overrides the 'Server' header to not reveal the software version."""
-        return "Web Server"
+        # This method is also called, so we return the same generic string.
+        return self.server_version
 
     def get_current_user(self):
         """Verifies the session cookie and returns the user ID if valid."""
@@ -116,12 +120,17 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
     def _send_security_headers(self):
         """Adds common security headers to all responses."""
-        self.send_header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
-        self.send_header('Referrer-Policy', 'strict-origin-when-cross-origin')
-        self.send_header('X-Content-Type-Options', 'nosniff')
-        # CSP: Allow resources from the same domain, images from https, and inline styles/scripts.
-        # 'unsafe-inline' is necessary for dynamically managed styles and scripts.
-        csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; form-action 'self';"
+        # Generate a nonce if it doesn't exist for this request.
+        # This makes the method safe to be called multiple times.
+        if not hasattr(self, 'nonce'):
+            self.nonce = secrets.token_hex(16)
+
+        # self.send_header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains') # Gestito da Apache
+        # self.send_header('Referrer-Policy', 'strict-origin-when-cross-origin') # Gestito da Apache
+        # self.send_header('X-Content-Type-Options', 'nosniff') # Gestito da Apache
+        # CSP with nonce: Allow resources from self, images from https, and inline scripts/styles ONLY if they have the correct nonce.
+        # This is much more secure than 'unsafe-inline'.
+        csp = f"default-src 'self'; script-src 'self' 'nonce-{self.nonce}'; style-src 'self' 'nonce-{self.nonce}'; img-src 'self' data: https:; connect-src 'self'; form-action 'self';"
         self.send_header('Content-Security-Policy', csp)
 
     def _redirect(self, path):
@@ -310,7 +319,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
     def serve_login_page(self):
         """Serves the HTML login page."""
-        self._send_html_response(200, get_login_page())
+        self._send_html_response(200, get_login_page(self))
 
     def handle_login(self):
         """Handles a login attempt from a POST request."""
@@ -345,11 +354,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 self.send_header('Set-Cookie', cookie.output(header='').lstrip())
                 self.end_headers()
             else:
-                self._send_html_response(401, get_login_page(error="Invalid credentials."))
+                self._send_html_response(401, get_login_page(self, error="Invalid credentials."))
 
         except Exception as e:
             logger.error(f"Error during login: {e}")
-            self._send_html_response(500, get_login_page(error="Internal server error."))
+            self._send_html_response(500, get_login_page(self, error="Internal server error."))
 
     def handle_logout(self):
         """Handles logout by deleting the session cookie."""
@@ -383,6 +392,10 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         # Determine language and load translations
         lang_code = self.get_user_language()
         translations = load_translations(lang_code)
+
+        # Generate the nonce *before* rendering the HTML template that needs it.
+        if not hasattr(self, 'nonce'):
+            self.nonce = secrets.token_hex(16)
 
         bookmarks = self.get_bookmarks(self.get_current_user(), limit=20, offset=0, filter_type=None, hide_read=hide_read_default)
 
@@ -449,11 +462,16 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             else:
                 self._send_error_response(404, "Static file not found")
 
+        except (ConnectionAbortedError, BrokenPipeError):
+            # This happens if the client closes the connection while we are sending data.
+            # It's a common network event, not a server error.
+            logger.info(f"Client aborted connection for {self.path}. Request terminated.")
+
         except Exception as e:
             logger.error(f"Error serving static file {self.path}: {e}")
             self._send_error_response(500, "Internal Server Error")
 
-    def render_bookmarks(self, bookmarks):
+    def render_bookmarks(self, bookmarks, translations={}):
         """
         Renders bookmarks as HTML in the "card" view (detailed).
 
@@ -476,13 +494,13 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             image_html = ''
             if bookmark[4]:  # image_url
-                image_html = f'<img src="{bookmark[4]}" alt="Preview" class="bookmark-image" onerror="this.style.display=\'none\'">'
+                image_html = f'<img src="{bookmark[4]}" alt="Preview" class="bookmark-image">'
             else:
-                image_html = '<div class="bookmark-image" style="display: flex; align-items: center; justify-content: center; background: #f8f9fa; color: #6c757d;">🔗</div>'
+                image_html = '<div class="bookmark-image image-placeholder">🔗</div>'
 
             hn_link = ''
             if bookmark[9]:  # comments_url (HackerNews)
-                hn_link = f'<a href="{bookmark[9]}" target="_blank" class="hn-link">🗞️ HN</a>'
+                hn_link = f'<a href="{bookmark[9]}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HackerNews comments")}">🗞️ HN</a>'
 
             # Sanitize for JS: remove newlines from title and description
             bookmark_list = list(bookmark)
@@ -500,7 +518,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             # Logic for the "read" button icon and title
             is_read = bookmark[10] == 1
-            read_button_title = "Mark as unread" if is_read else "Mark as read"
+            read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
             read_button_icon = (
                 '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>'
                 if is_read
@@ -515,18 +533,18 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                         <div class="bookmark-actions-top">                            
                             {hn_link}
                             <button class="icon-btn read" title="{read_button_title}" data-id="{bookmark_safe[0]}">{read_button_icon}</button>
-                            <button class="icon-btn edit" title="Edit" data-bookmark='{bookmark_json_html}'>
+                            <button class="icon-btn edit" title="{translations.get("tooltip_edit", "Edit")}" data-bookmark='{bookmark_json_html}'>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
-                            <button class="icon-btn delete" title="Delete" data-id="{bookmark_safe[0]}">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <button class="icon-btn delete" title="{translations.get("tooltip_delete", "Delete")}" data-id="{bookmark_safe[0]}">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                             </button>
                         </div>
                         <div class="bookmark-title">{bookmark_safe[2] or 'Untitled'}</div>
                     </div>
                 </div>
 
-                <a href="{bookmark_safe[1]}" target="_blank" class="bookmark-url">{bookmark_safe[1]}</a>
+                <a href="{bookmark_safe[1]}" target="_blank" class="bookmark-url" title="{translations.get("tooltip_open_link", "Open link")}">{bookmark_safe[1]}</a>
 
                 <div class="bookmark-description">{bookmark_safe[3] or 'No description'}</div>
 
@@ -538,7 +556,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         return ''.join(html_cards)
 
-    def render_bookmarks_compact(self, bookmarks):
+    def render_bookmarks_compact(self, bookmarks, translations={}):
         """
         Renders bookmarks in the compact view (dense list).
 
@@ -555,14 +573,14 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             image_html = ''
             if bookmark[4]:  # image_url
-                image_html = f'<img src="{bookmark[4]}" alt="Preview" class="compact-image" onerror="this.innerHTML=\'🔗\'">'
+                image_html = f'<img src="{bookmark[4]}" alt="Preview" class="compact-image">'
             else:
                 image_html = '<div class="compact-image">🔗</div>'
 
             badges_html = ''
             badges = []
             if bookmark[9]:  # comments_url (HackerNews)
-                badges.append(f'<a href="{bookmark[9]}" target="_blank" class="hn-link">HN</a>')
+                badges.append(f'<a href="{bookmark[9]}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HackerNews comments")}">HN</a>')
 
             if badges:
                 badges_html = '<div class="compact-badges">' + ''.join(badges) + '</div>'
@@ -583,7 +601,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             # Logic for the "read" button icon and title
             is_read = bookmark[10] == 1
-            read_button_title = "Mark as unread" if is_read else "Mark as read"
+            read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
             read_button_icon = (
                 '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>'
                 if is_read
@@ -597,15 +615,15 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                     <div class="compact-actions-top">
                         {badges_html}
                         <button class="icon-btn read" title="{read_button_title}" data-id="{bookmark_safe[0]}">{read_button_icon}</button>
-                        <button class="icon-btn edit" title="Edit" data-bookmark='{bookmark_json_html}'>
+                        <button class="icon-btn edit" title="{translations.get("tooltip_edit", "Edit")}" data-bookmark='{bookmark_json_html}'>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
-                        <button class="icon-btn delete" title="Delete" data-id="{bookmark_safe[0]}">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <button class="icon-btn delete" title="{translations.get("tooltip_delete", "Delete")}" data-id="{bookmark_safe[0]}">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                         </button>
                     </div>
                     <div class="compact-title">{bookmark_safe[2] or 'Untitled'}</div>
-                    <a href="{bookmark_safe[1]}" target="_blank" class="compact-url">{bookmark_safe[1]}</a>
+                    <a href="{bookmark_safe[1]}" target="_blank" class="compact-url" title="{translations.get("tooltip_open_link", "Open link")}">{bookmark_safe[1]}</a>
                 </div>
                 <div class="compact-date">{short_date}</div>
             </div>

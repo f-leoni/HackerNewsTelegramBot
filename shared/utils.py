@@ -38,22 +38,24 @@ def get_article_metadata(url):
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
 
-        # Perform a HEAD request to check the content type
-        try:
-            head_response = requests.head(url, headers=headers, timeout=10, allow_redirects=True)
-            head_response.raise_for_status()
-            
-            content_type = head_response.headers.get("Content-Type", "")
-            if "text/html" not in content_type:
-                logger.info(f"URL {url} is not an HTML page (Content-Type: {content_type}).")
-                return {
-                    "title": f"Link to file ({content_type})",
-                    "description": f"The URL points to a file of type {content_type}.",
-                    "image_url": "",
-                    "domain": extract_domain(url),
-                }
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"HEAD request failed for {url}: {e}. Proceeding with GET.")
+        # Skip HEAD request for Hacker News links, as they return 405 (Method Not Allowed)
+        if "news.ycombinator.com" not in url:
+            # Perform a HEAD request to check the content type for other sites
+            try:
+                head_response = requests.head(url, headers=headers, timeout=10, allow_redirects=True)
+                head_response.raise_for_status()
+                
+                content_type = head_response.headers.get("Content-Type", "")
+                if "text/html" not in content_type:
+                    logger.info(f"URL {url} is not an HTML page (Content-Type: {content_type}).")
+                    return {
+                        "title": f"Link to file ({content_type})",
+                        "description": f"The URL points to a file of type {content_type}.",
+                        "image_url": "",
+                        "domain": extract_domain(url),
+                    }
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"HEAD request failed for {url}: {e}. Proceeding with GET.")
 
         response = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
         response.raise_for_status()

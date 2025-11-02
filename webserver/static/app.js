@@ -45,11 +45,11 @@ function setView(view) {
     const viewToggleBtn = document.getElementById('viewToggleBtn');
 
     if (view === 'cards') {
-        cardsView.style.display = 'grid';
+        cardsView.classList.remove('hidden');
         compactView.classList.remove('show');
         viewToggleBtn.innerHTML = window.TRANSLATIONS.compact_view;
     } else {
-        cardsView.style.display = 'none';
+        cardsView.classList.add('hidden');
         compactView.classList.add('show');
         viewToggleBtn.innerHTML = window.TRANSLATIONS.card_view;
     }
@@ -84,7 +84,7 @@ function triggerSearch() {
     isLoading = false;
     const loadingIndicator = document.getElementById('loadingIndicator');
     loadingIndicator.textContent = window.TRANSLATIONS.loading;
-    loadingIndicator.style.display = 'none';
+    loadingIndicator.classList.add('hidden');
     
     loadMoreBookmarks();
 }
@@ -124,7 +124,7 @@ async function loadMoreBookmarks() {
     if (isLoading || allLoaded) return;
     isLoading = true;
     const loadingIndicator = document.getElementById('loadingIndicator');
-    loadingIndicator.style.display = 'block';
+    loadingIndicator.classList.remove('hidden');
 
     const searchTerm = document.getElementById('searchBox').value;
     let apiUrl = `/api/bookmarks?offset=${currentOffset}&limit=${limit}&hide_read=${hideRead}&sort=${sortOrder}`;
@@ -166,9 +166,9 @@ async function loadMoreBookmarks() {
     } finally {
         isLoading = false;
         if (allLoaded) {
-            loadingIndicator.style.display = 'block';
+            loadingIndicator.classList.remove('hidden');
         } else {
-            loadingIndicator.style.display = 'none';
+            loadingIndicator.classList.add('hidden');
         }
     }
 }
@@ -219,13 +219,20 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('viewToggleBtn').addEventListener('click', toggleView);
     document.getElementById('sortToggleBtn').addEventListener('click', toggleSort);
     document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
+    document.getElementById('addBookmarkBtn').addEventListener('click', openAddModal);
+    document.getElementById('hideReadBtn').addEventListener('click', toggleHideRead);
+    document.getElementById('langSelector').addEventListener('change', (e) => {
+        window.location.href = '/?lang=' + e.target.value;
+    });
+    document.getElementById('closeModalBtn').addEventListener('click', closeEditModal);
+    document.getElementById('cancelModalBtn').addEventListener('click', closeEditModal);
 
     const searchBox = document.getElementById('searchBox');
     const clearSearchBtn = document.getElementById('clearSearchBtn');
 
     searchBox.addEventListener('input', function(e) {
         // Mostra/nascondi il pulsante di cancellazione
-        clearSearchBtn.style.display = e.target.value ? 'block' : 'none'; // eslint-disable-line no-undef
+        clearSearchBtn.classList.toggle('hidden', !e.target.value);
 
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
@@ -235,8 +242,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
     clearSearchBtn.addEventListener('click', () => {
         searchBox.value = '';
-        clearSearchBtn.style.display = 'none';
+        clearSearchBtn.classList.add('hidden');
         triggerSearch();
+    });
+
+    // Event listener for special filter buttons
+    document.querySelectorAll('.special-filters .filter-btn[data-filter]').forEach(button => {
+        button.addEventListener('click', (event) => {
+            filterSpecial(button.dataset.filter, event);
+        });
     });
 
     const backToTopBtn = document.getElementById('backToTopBtn');
@@ -249,17 +263,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Back to top button visibility
         if (window.scrollY > 300) {
-            if (backToTopBtn.style.display !== 'block') {
-                backToTopBtn.style.display = 'block';
+            if (backToTopBtn.classList.contains('hidden')) {
+                backToTopBtn.classList.remove('hidden');
                 requestAnimationFrame(() => {
                     backToTopBtn.style.opacity = '1';
                     backToTopBtn.style.transform = 'translateY(0)';
                 });
             }
         } else {
-            backToTopBtn.style.opacity = '0';
-            backToTopBtn.style.transform = 'translateY(20px)';
-            setTimeout(() => { if(window.scrollY <= 300) backToTopBtn.style.display = 'none'; }, 300);
+            backToTopBtn.classList.add('hidden');
         }
     });
 
@@ -308,7 +320,7 @@ function openAddModal() {
     editForm.reset();
     document.getElementById('modalTitle').textContent = window.TRANSLATIONS.modal_add_title;
     document.getElementById('edit-id').value = '';
-    editModal.style.display = 'block';
+    editModal.classList.remove('hidden');
 }
 
 function openEditModal(bookmark) {
@@ -321,11 +333,11 @@ function openEditModal(bookmark) {
     document.getElementById('edit-telegram_user_id').value = bookmark.telegram_user_id || '';
     document.getElementById('edit-is_read').checked = bookmark.is_read == 1; // eslint-disable-line eqeqeq
     document.getElementById('modalTitle').textContent = window.TRANSLATIONS.modal_edit_title;
-    editModal.style.display = 'block';
+    editModal.classList.remove('hidden');
 }
 
 function closeEditModal() {
-    editModal.style.display = 'none';
+    editModal.classList.add('hidden');
 }
 
 window.onclick = function(event) {
@@ -505,8 +517,8 @@ async function bookmarkMarkRead(id) {
 // --- DYNAMIC RENDERING ---
 function renderBookmarkCard(bookmark) {
     const imageHtml = bookmark.image_url
-        ? `<img src="${bookmark.image_url}" alt="Preview" class="bookmark-image" onerror="this.style.display='none'">`
-        : '<div class="bookmark-image" style="display: flex; align-items: center; justify-content: center; background: #f8f9fa; color: #6c757d;">🔗</div>';
+        ? `<img src="${bookmark.image_url}" alt="Preview" class="bookmark-image">`
+        : '<div class="bookmark-image image-placeholder">🔗</div>';
     const hnLink = bookmark.comments_url ? `<a href="${bookmark.comments_url}" target="_blank" class="hn-link" title="${window.TRANSLATIONS.tooltip_hn_comments}">🗞️ HN</a>` : '';
     const bookmarkJson = JSON.stringify(bookmark).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
     
@@ -525,7 +537,7 @@ function renderBookmarkCard(bookmark) {
                     ${hnLink}
                     <button class="icon-btn read" title="${readButtonTitle}" data-id="${bookmark.id}">${readButtonIcon}</button>
                     <button class="icon-btn edit" title="${window.TRANSLATIONS.tooltip_edit}" data-bookmark='${bookmarkJson}'><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-                    <button class="icon-btn delete" title="${window.TRANSLATIONS.tooltip_delete}" data-id="${bookmark.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                    <button class="icon-btn delete" title="${window.TRANSLATIONS.tooltip_delete}" data-id="${bookmark.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
                 </div>
                 <div class="bookmark-title">${escape_html(bookmark.title) || 'Untitled'}</div>
             </div>
@@ -540,7 +552,7 @@ function renderBookmarkCard(bookmark) {
 
 function renderBookmarkCompactItem(bookmark) {
     const imageHtml = bookmark.image_url
-        ? `<img src="${bookmark.image_url}" alt="Preview" class="compact-image" onerror="this.innerHTML='🔗'">`
+        ? `<img src="${bookmark.image_url}" alt="Preview" class="compact-image">`
         : '<div class="compact-image">🔗</div>';
     let badgesHtml = '';
     if (bookmark.comments_url) badgesHtml += `<a href="${bookmark.comments_url}" target="_blank" class="hn-link" title="${window.TRANSLATIONS.tooltip_hn_comments}">HN</a>`;
@@ -562,7 +574,7 @@ function renderBookmarkCompactItem(bookmark) {
                 ${badgesHtml}
                 <button class="icon-btn read" title="${readButtonTitle}" data-id="${bookmark.id}">${readButtonIcon}</button>
                 <button class="icon-btn edit" title="${window.TRANSLATIONS.tooltip_edit}" data-bookmark='${bookmarkJson}'><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-                <button class="icon-btn delete" title="${window.TRANSLATIONS.tooltip_delete}" data-id="${bookmark.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <button class="icon-btn delete" title="${window.TRANSLATIONS.tooltip_delete}" data-id="${bookmark.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
             </div>
             <div class="compact-title">${escape_html(bookmark.title) || 'Untitled'}</div>
             <a href="${escape_html(bookmark.url)}" target="_blank" class="compact-url" title="${window.TRANSLATIONS.tooltip_open_link}">${escape_html(bookmark.url)}</a>

@@ -216,6 +216,26 @@ h1 {
     border: 1px solid #dee2e6;
 }
 
+/* Stile per i placeholder delle immagini (div) */
+.image-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Fallback for broken images, compatible with CSP */
+.bookmark-image::before, .compact-image::before {
+    content: '🔗'; /* Icona di fallback */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    background-color: #f0f2f5;
+    color: #888;
+    font-size: 1.5em;
+}
+
 .bookmark-info {
     flex: 1;
     min-width: 0;
@@ -326,6 +346,11 @@ h1 {
     font-size: 14px;
 }
 
+html.dark-mode .bookmark-image::before,
+html.dark-mode .compact-image::before {
+    background-color: #333;
+    color: #777;
+}
 .compact-content {
     min-width: 0;
 }
@@ -582,6 +607,10 @@ html.dark-mode .modal-content .form-group textarea {
     color: var(--text-color);
 }
 
+html.dark-mode .modal-content .form-group label {
+    color: var(--text-color);
+}
+
 html.dark-mode .search-box::placeholder {
     color: #888;
 }
@@ -701,7 +730,7 @@ html.dark-mode .modal-footer {
 
 /* --- MODAL STYLES --- */
 .modal {
-    display: none;
+    /* display: none; removed, now controlled by .hidden */
     position: fixed;
     z-index: 1000;
     left: 0;
@@ -833,7 +862,7 @@ html.dark-mode .modal-header h3 {
 
 /* --- Back to Top Button --- */
 #backToTopBtn {
-    display: none; /* Nascosto di default */
+    /* display: none; removed, now controlled by .hidden */
     position: fixed;
     bottom: 20px;
     right: 30px;
@@ -862,4 +891,17 @@ html.dark-mode .modal-header h3 {
 html.dark-mode #backToTopBtn {
     background-color: var(--link-color);
     color: #111;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.w-100 {
+    width: 100%;
+}
+.full-width-grid-column {
+    grid-column: 1 / -1;
+}
+
 }
