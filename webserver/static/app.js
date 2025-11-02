@@ -47,11 +47,11 @@ function setView(view) {
     if (view === 'cards') {
         cardsView.style.display = 'grid';
         compactView.classList.remove('show');
-        viewToggleBtn.innerHTML = '📄 Compact View';
+        viewToggleBtn.innerHTML = window.TRANSLATIONS.compact_view;
     } else {
         cardsView.style.display = 'none';
         compactView.classList.add('show');
-        viewToggleBtn.innerHTML = '📋 Card View';
+        viewToggleBtn.innerHTML = window.TRANSLATIONS.card_view;
     }
     currentView = view;
     updateVisibleCount();
@@ -71,7 +71,7 @@ function toggleSort() {
 
 function updateSortButton() {
     const btn = document.getElementById('sortToggleBtn');
-    btn.textContent = sortOrder === 'desc' ? '📅 Newest First' : '📅 Oldest First';
+    btn.textContent = sortOrder === 'desc' ? window.TRANSLATIONS.sort_newest : window.TRANSLATIONS.sort_oldest;
 }
 
 // --- FILTERS & SEARCH ---
@@ -82,8 +82,8 @@ function triggerSearch() {
     currentOffset = 0;
     allLoaded = false;
     isLoading = false;
-    const loadingIndicator = document.getElementById('loadingIndicator'); // eslint-disable-line no-undef
-    loadingIndicator.textContent = 'Loading...';
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    loadingIndicator.textContent = window.TRANSLATIONS.loading;
     loadingIndicator.style.display = 'none';
     
     loadMoreBookmarks();
@@ -112,7 +112,7 @@ function toggleHideRead() {
 function updateHideReadButton() {
     const btn = document.getElementById('hideReadBtn');
     btn.classList.toggle('active', hideRead);
-    btn.textContent = hideRead ? '🙉 Show All' : '🙈 Hide Read';
+    btn.textContent = hideRead ? window.TRANSLATIONS.show_all : window.TRANSLATIONS.hide_read;
 }
 
 function updateVisibleCount() {
@@ -143,7 +143,7 @@ async function loadMoreBookmarks() {
 
         if (newBookmarks.length === 0) {
             allLoaded = true;
-            loadingIndicator.textContent = visibleCount === 0 ? 'No bookmarks found.' : 'All bookmarks have been loaded.';
+            loadingIndicator.textContent = visibleCount === 0 ? window.TRANSLATIONS.no_bookmarks_found : window.TRANSLATIONS.all_bookmarks_loaded;
             if (currentOffset === 0) document.getElementById('visibleCount').textContent = 0;
             return;
         }
@@ -162,7 +162,7 @@ async function loadMoreBookmarks() {
 
     } catch (error) {
         console.error("Error loading bookmarks:", error);
-        loadingIndicator.textContent = 'Error loading content.';
+        loadingIndicator.textContent = window.TRANSLATIONS.error_loading;
     } finally {
         isLoading = false;
         if (allLoaded) {
@@ -178,10 +178,10 @@ function applyTheme(theme) {
     const themeToggleBtn = document.getElementById('themeToggleBtn');
     if (theme === 'dark') {
         document.documentElement.classList.add('dark-mode');
-        if (themeToggleBtn) themeToggleBtn.textContent = '☀️ Light Mode';
+        if (themeToggleBtn) themeToggleBtn.textContent = window.TRANSLATIONS.light_mode;
     } else {
         document.documentElement.classList.remove('dark-mode');
-        if (themeToggleBtn) themeToggleBtn.textContent = '🌙 Dark Mode';
+        if (themeToggleBtn) themeToggleBtn.textContent = window.TRANSLATIONS.dark_mode;
     }
 }
 
@@ -306,7 +306,7 @@ const editForm = document.getElementById('editBookmarkForm');
 
 function openAddModal() {
     editForm.reset();
-    document.getElementById('modalTitle').textContent = 'Add New Bookmark';
+    document.getElementById('modalTitle').textContent = window.TRANSLATIONS.modal_add_title;
     document.getElementById('edit-id').value = '';
     editModal.style.display = 'block';
 }
@@ -319,8 +319,8 @@ function openEditModal(bookmark) {
     document.getElementById('edit-description').value = bookmark.description || '';
     document.getElementById('edit-comments_url').value = bookmark.comments_url || '';
     document.getElementById('edit-telegram_user_id').value = bookmark.telegram_user_id || '';
-    document.getElementById('edit-is_read').checked = bookmark.is_read == 1;
-    document.getElementById('modalTitle').textContent = 'Edit Bookmark';
+    document.getElementById('edit-is_read').checked = bookmark.is_read == 1; // eslint-disable-line eqeqeq
+    document.getElementById('modalTitle').textContent = window.TRANSLATIONS.modal_edit_title;
     editModal.style.display = 'block';
 }
 
@@ -436,7 +436,7 @@ async function scrapeAndFillData() {
 
 // --- API ACTIONS ---
 async function bookmarkDelete(id) {
-    if (!confirm('Are you sure you want to delete this bookmark?')) return;
+    if (!confirm(window.TRANSLATIONS.confirm_delete)) return;
     try {
         const res = await fetch('/api/bookmarks/' + id, { method: 'DELETE' });
         if (res.ok) {
@@ -480,7 +480,7 @@ async function bookmarkMarkRead(id) {
                 const readButton = el.querySelector('.icon-btn.read');
                 if (readButton) {
                     const isRead = newReadStatus == 1;
-                    readButton.title = isRead ? "Mark as unread" : "Mark as read";
+                    readButton.title = isRead ? window.TRANSLATIONS.tooltip_mark_as_unread : window.TRANSLATIONS.tooltip_mark_as_read;
                     readButton.innerHTML = isRead
                         ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`
                         : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -507,11 +507,11 @@ function renderBookmarkCard(bookmark) {
     const imageHtml = bookmark.image_url
         ? `<img src="${bookmark.image_url}" alt="Preview" class="bookmark-image" onerror="this.style.display='none'">`
         : '<div class="bookmark-image" style="display: flex; align-items: center; justify-content: center; background: #f8f9fa; color: #6c757d;">🔗</div>';
-    const hnLink = bookmark.comments_url ? `<a href="${bookmark.comments_url}" target="_blank" class="hn-link" title="View HackerNews comments">🗞️ HN</a>` : '';
+    const hnLink = bookmark.comments_url ? `<a href="${bookmark.comments_url}" target="_blank" class="hn-link" title="${window.TRANSLATIONS.tooltip_hn_comments}">🗞️ HN</a>` : '';
     const bookmarkJson = JSON.stringify(bookmark).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
     
     const isRead = bookmark.is_read == 1;
-    const readButtonTitle = isRead ? "Mark as unread" : "Mark as read";
+    const readButtonTitle = isRead ? window.TRANSLATIONS.tooltip_mark_as_unread : window.TRANSLATIONS.tooltip_mark_as_read;
     const readButtonIcon = isRead 
         ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`
         : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -524,13 +524,13 @@ function renderBookmarkCard(bookmark) {
                 <div class="bookmark-actions-top">
                     ${hnLink}
                     <button class="icon-btn read" title="${readButtonTitle}" data-id="${bookmark.id}">${readButtonIcon}</button>
-                    <button class="icon-btn edit" title="Edit" data-bookmark='${bookmarkJson}'><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-                    <button class="icon-btn delete" title="Delete" data-id="${bookmark.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                    <button class="icon-btn edit" title="${window.TRANSLATIONS.tooltip_edit}" data-bookmark='${bookmarkJson}'><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                    <button class="icon-btn delete" title="${window.TRANSLATIONS.tooltip_delete}" data-id="${bookmark.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                 </div>
                 <div class="bookmark-title">${escape_html(bookmark.title) || 'Untitled'}</div>
             </div>
         </div>
-        <a href="${escape_html(bookmark.url)}" target="_blank" class="bookmark-url" title="Open link in a new tab">${escape_html(bookmark.url)}</a>
+        <a href="${escape_html(bookmark.url)}" target="_blank" class="bookmark-url" title="${window.TRANSLATIONS.tooltip_open_link}">${escape_html(bookmark.url)}</a>
         <div class="bookmark-description">${escape_html(bookmark.description) || 'No description'}</div>
         <div class="bookmark-footer">
             <span class="bookmark-date">${bookmark.saved_at}</span>
@@ -543,13 +543,13 @@ function renderBookmarkCompactItem(bookmark) {
         ? `<img src="${bookmark.image_url}" alt="Preview" class="compact-image" onerror="this.innerHTML='🔗'">`
         : '<div class="compact-image">🔗</div>';
     let badgesHtml = '';
-    if (bookmark.comments_url) badgesHtml += `<a href="${bookmark.comments_url}" target="_blank" class="hn-link" title="View HackerNews comments">HN</a>`;
+    if (bookmark.comments_url) badgesHtml += `<a href="${bookmark.comments_url}" target="_blank" class="hn-link" title="${window.TRANSLATIONS.tooltip_hn_comments}">HN</a>`;
     if (badgesHtml) badgesHtml = `<div class="compact-badges">${badgesHtml}</div>`;
     const shortDate = (bookmark.saved_at || '').split(' ')[0];
     const bookmarkJson = JSON.stringify(bookmark).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 
     const isRead = bookmark.is_read == 1;
-    const readButtonTitle = isRead ? "Mark as unread" : "Mark as read";
+    const readButtonTitle = isRead ? window.TRANSLATIONS.tooltip_mark_as_unread : window.TRANSLATIONS.tooltip_mark_as_read;
     const readButtonIcon = isRead 
         ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`
         : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -561,11 +561,11 @@ function renderBookmarkCompactItem(bookmark) {
             <div class="compact-actions-top">
                 ${badgesHtml}
                 <button class="icon-btn read" title="${readButtonTitle}" data-id="${bookmark.id}">${readButtonIcon}</button>
-                <button class="icon-btn edit" title="Edit" data-bookmark='${bookmarkJson}'><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-                <button class="icon-btn delete" title="Delete" data-id="${bookmark.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <button class="icon-btn edit" title="${window.TRANSLATIONS.tooltip_edit}" data-bookmark='${bookmarkJson}'><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <button class="icon-btn delete" title="${window.TRANSLATIONS.tooltip_delete}" data-id="${bookmark.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             </div>
             <div class="compact-title">${escape_html(bookmark.title) || 'Untitled'}</div>
-            <a href="${escape_html(bookmark.url)}" target="_blank" class="compact-url" title="Open link in a new tab">${escape_html(bookmark.url)}</a>
+            <a href="${escape_html(bookmark.url)}" target="_blank" class="compact-url" title="${window.TRANSLATIONS.tooltip_open_link}">${escape_html(bookmark.url)}</a>
         </div>
         <div class="compact-date">${shortDate}</div>
     </div>`;

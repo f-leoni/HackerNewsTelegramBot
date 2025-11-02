@@ -28,7 +28,7 @@ from shared.utils import extract_domain, get_article_metadata
 from shared.database import get_db_path
 from htmldata import get_html
 from htmldata import get_login_page
-__version__ = "1.7.2"
+__version__ = "1.7.3"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -49,6 +49,25 @@ def db_connection():
         conn.commit()
     finally:
         conn.close()
+
+SUPPORTED_LANGUAGES = ['en', 'it']
+DEFAULT_LANGUAGE = 'en'
+
+def load_translations(lang_code):
+    """Loads the translation dictionary from a JSON file."""
+    # Sanitize lang_code to prevent directory traversal
+    lang_code = re.sub(r'[^a-zA-Z_-]', '', lang_code).split('-')[0].lower()
+    if lang_code not in SUPPORTED_LANGUAGES:
+        lang_code = DEFAULT_LANGUAGE
+
+    filepath = os.path.join(SCRIPT_DIR, 'locales', f'{lang_code}.json')
+    
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # Fallback to default language if the file is missing or corrupt
+        return load_translations(DEFAULT_LANGUAGE)
 
 class BookmarkHandler(BaseHTTPRequestHandler):
     def version_string(self):
@@ -71,6 +90,29 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             result = cursor.fetchone()
 
         return result[0] if result else None
+
+    def get_user_language(self):
+        """Determines the user's preferred language."""
+        # 1. Check for a language query parameter (e.g., /?lang=it)
+        query_components = parse_qs(urlparse(self.path).query)
+        lang_param = query_components.get('lang', [None])[0]
+        if lang_param in SUPPORTED_LANGUAGES:
+            return lang_param
+
+        # 2. Check for a language cookie
+        cookies = SimpleCookie(self.headers.get('Cookie'))
+        lang_cookie = cookies.get('lang')
+        if lang_cookie and lang_cookie.value in SUPPORTED_LANGUAGES:
+            return lang_cookie.value
+
+        # 3. Check the Accept-Language header
+        accept_language = self.headers.get('Accept-Language', '')
+        for lang in accept_language.split(','):
+            code = lang.split(';')[0].strip().lower().split('-')[0]
+            if code in SUPPORTED_LANGUAGES:
+                return code
+
+        return DEFAULT_LANGUAGE
 
     def _send_security_headers(self):
         """Adds common security headers to all responses."""
@@ -338,13 +380,28 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         # By default, it hides read items, but this can be overridden by client-side JS
         hide_read_default = True
 
+        # Determine language and load translations
+        lang_code = self.get_user_language()
+        translations = load_translations(lang_code)
+
         bookmarks = self.get_bookmarks(self.get_current_user(), limit=20, offset=0, filter_type=None, hide_read=hide_read_default)
 
         # The total count always refers to all bookmarks in the DB
         total_count = self.get_total_bookmark_count(filter_type=None, hide_read=False)
-        html = get_html(self, bookmarks, __version__, total_count)
+        html = get_html(self, bookmarks, __version__, total_count, translations)
 
-        self._send_html_response(200, html)
+        # Send headers in the correct order
+        self.send_response(200)
+        self._send_security_headers()
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+
+        # Set a cookie to remember the user's language choice
+        cookie = SimpleCookie()
+        cookie['lang'] = lang_code
+        self.send_header('Set-Cookie', cookie.output(header='').lstrip())
+
+        self.end_headers()
+        self.wfile.write(html.encode('utf-8'))
 
     def _send_json_response(self, status_code, data):
         """Helper to send JSON responses."""

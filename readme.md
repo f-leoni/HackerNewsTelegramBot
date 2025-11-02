@@ -8,7 +8,7 @@ A Telegram bot and a companion web server to save and manage bookmarks from Hack
 *   **Web Interface**: A modern web UI to view, search, filter, and manage your bookmarks.
 *   **Metadata Scraping**: Automatically fetches the title, description, and preview image for each link.
 *   **HackerNews Integration**: Special handling for HackerNews links to associate an article with its comments page.
-*   **Multi-user Support**: The web interface supports multiple users, and bookmarks are associated with a specific user.
+*   **Multi-user & Multilingual Support**: The web interface supports multiple users and is available in English and Italian, with automatic language detection and a manual selector.
 *   **Dockerized**: All services (bot, webserver, database migration) are containerized for a consistent and isolated environment.
 
 ---
@@ -73,11 +73,12 @@ Questo comando:
 
 *   **Web Interface**: Apri il browser e vai su **`https://localhost:8443`**.
     *   Il browser mostrerà un avviso di sicurezza a causa del certificato autofirmato. Accetta il rischio e procedi.
-    *   Effettua il login con le credenziali che hai creato con `add_user.py`.
+    *   Effettua il login con le credenziali create con `add_user.py`.
+    *   L'interfaccia rileverà automaticamente la lingua del tuo browser. Puoi cambiarla manualmente usando il selettore in alto a destra.
 
 *   **Telegram Bot**: Avvia una chat con il tuo bot su Telegram e inviagli dei link. Appariranno istantaneamente nell'interfaccia web!
 
-### 4. Fermare l'Applicazione
+### 4. Gestione dell'Applicazione
 
 Per fermare tutti i container, esegui:
 
@@ -86,6 +87,28 @@ docker-compose down
 ```
 
 Questo comando ferma e rimuove i container e la rete, ma **non cancella i dati** salvati nei volumi (database, sessione del bot e certificati SSL).
+
+---
+## 🌐 Internazionalizzazione (i18n)
+
+L'interfaccia web supporta più lingue (attualmente inglese e italiano).
+
+### Come funziona
+
+La lingua viene determinata con la seguente priorità:
+1.  **Parametro URL**: Puoi forzare una lingua aggiungendo `?lang=it` o `?lang=en` all'URL.
+2.  **Cookie**: Se hai già selezionato una lingua, la scelta viene salvata in un cookie (`lang`) e riutilizzata.
+3.  **Header del Browser**: Se non ci sono cookie o parametri, il server controlla l'header `Accept-Language` inviato dal tuo browser.
+4.  **Default**: Se nessuna delle opzioni precedenti ha successo, viene usato l'inglese (`en`).
+
+### Come aggiungere una nuova lingua
+
+1.  **Crea il file di traduzione**: Nella cartella `webserver/locales/`, crea un nuovo file JSON (es. `es.json` per lo spagnolo). Copia il contenuto di `en.json` e traduci tutti i valori.
+2.  **Aggiorna il server**: Apri `webserver/server.py` e aggiungi il nuovo codice lingua alla lista `SUPPORTED_LANGUAGES`.
+    ```python
+    SUPPORTED_LANGUAGES = ['en', 'it', 'es'] # Aggiungi 'es'
+    ```
+3.  **Aggiorna l'interfaccia**: Apri `webserver/htmldata.py` e aggiungi la nuova opzione al menu a tendina `<select id="langSelector">`.
 
 ---
 
@@ -128,8 +151,9 @@ docker-compose up --build -d
 
 *   **Web Interface**: Open your browser and navigate to **`https://localhost:8443`**. You will see a security warning due to the self-signed certificate; please proceed. Log in with the credentials you created.
 *   **Telegram Bot**: Start a chat with your bot on Telegram and send it links. They will appear in the web interface.
+*   **Language**: The interface will automatically detect your browser's language. You can switch it manually using the selector in the top right.
 
-### 4. Stop the Application
+### 4. Application Management
 
 To stop all services, run:
 ```bash

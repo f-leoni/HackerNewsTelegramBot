@@ -1,6 +1,7 @@
 """
 Module for generating the web page HTML.
 """
+import json
 
 def get_login_page(error=None):
     """Generates the HTML for the login page."""
@@ -37,7 +38,7 @@ def get_login_page(error=None):
 </html>
 """
 
-def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
+def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, search_query=None):
     # HTML escape function to avoid issues with quotes in data
     def escape_html(text):
         if text is None:
@@ -51,7 +52,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zitzu's HackerNews Bot</title>
+    <title>{translations.get('page_title', "Zitzu's Bookmarks")}</title>
     <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
     <link rel="alternate icon" href="/favicon.ico" type="image/x-icon">
     <link rel="apple-touch-icon" href="/static/img/favicon.svg">
@@ -59,30 +60,34 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
 </head>
 <body>
     <div class="container">
-        <h1>📚 Zitzu's Bookmarks Bot</h1>
+        <h1>{translations.get('header', 'Bookmarks')}</h1>
         
         <div class="search-container">
-            <input type="text" class="search-box" id="searchBox" placeholder="🔍 Search bookmarks..." value="{search_value}" title="Search by title, URL, or description">
-            <button type="button" id="clearSearchBtn" class="clear-search-btn" title="Clear search">&times;</button>
+            <input type="text" class="search-box" id="searchBox" placeholder="{translations.get('search_placeholder', 'Search...')}" value="{search_value}" title="{translations.get('tooltip_search', 'Search...')}">
+            <button type="button" id="clearSearchBtn" class="clear-search-btn" title="{translations.get('tooltip_clear_search', 'Clear search')}">&times;</button>
         </div>
 
         <!-- View controls -->
         <div class="view-controls">
-            <button type="button" class="view-btn add-bookmark-btn" onclick="openAddModal()" title="Add a new bookmark">
-                ➕ Add Bookmark
+            <button type="button" class="view-btn add-bookmark-btn" onclick="openAddModal()" title="{translations.get('tooltip_add_bookmark', 'Add bookmark')}">
+                {translations.get('add_bookmark', 'Add Bookmark')}
             </button>
-            <button type="button" class="view-btn" id="sortToggleBtn" title="Change sort order">📅 Newest First</button>
-            <button type="button" class="view-btn" id="viewToggleBtn" title="Change view">📄 Compact View</button>
-            <button type="button" class="view-btn" id="themeToggleBtn" title="Change theme">🌙 Dark Mode</button>
+            <button type="button" class="view-btn" id="sortToggleBtn" title="{translations.get('tooltip_change_sort', 'Change sort order')}">{translations.get('sort_newest', 'Newest First')}</button>
+            <button type="button" class="view-btn" id="viewToggleBtn" title="{translations.get('tooltip_change_view', 'Change view')}">{translations.get('compact_view', 'Compact View')}</button>
+            <button type="button" class="view-btn" id="themeToggleBtn" title="{translations.get('tooltip_change_theme', 'Change theme')}">{translations.get('dark_mode', 'Dark Mode')}</button>
+            <select id="langSelector" class="view-btn" onchange="window.location.href='/?lang=' + this.value" title="{translations.get('tooltip_change_language', 'Change language')}">
+                <option value="en" {'selected' if self.get_user_language() == 'en' else ''}>🇬🇧 English</option>
+                <option value="it" {'selected' if self.get_user_language() == 'it' else ''}>🇮🇹 Italiano</option>
+            </select>
             <span><small>v{version}</small></span>
         </div>
 
         <!-- Special filters -->
         <div class="special-filters">
-            <button class="filter-btn" onclick="filterSpecial('recent', event)" title="Filter bookmarks from the last 7 days">🕐 Last 7 days</button>
-            <button class="filter-btn" id="hideReadBtn" onclick="toggleHideRead()" title="Toggle visibility of read bookmarks">🙈 Hide Read</button>
-            <a href="/api/export/csv" class="filter-btn" download="bookmarks.csv" target="_blank" title="Export all bookmarks to a CSV file">📤 Export CSV</a>
-            <a href="/logout" class="filter-btn" title="Log out from the application">🚪 Logout</a>
+            <button class="filter-btn" onclick="filterSpecial('recent', event)" title="{translations.get('tooltip_filter_7_days', 'Filter...')}">{translations.get('filter_7_days', 'Last 7 days')}</button>
+            <button class="filter-btn" id="hideReadBtn" onclick="toggleHideRead()" title="{translations.get('tooltip_toggle_read', 'Toggle read...')}">{translations.get('hide_read', 'Hide Read')}</button>
+            <a href="/api/export/csv" class="filter-btn" download="bookmarks.csv" target="_blank" title="{translations.get('tooltip_export_csv', 'Export...')}">{translations.get('export_csv', 'Export CSV')}</a>
+            <a href="/logout" class="filter-btn" title="{translations.get('tooltip_logout', 'Logout...')}">{translations.get('logout', 'Logout')}</a>
         </div>
 
         <div class="filter-bar" id="filterBar">
@@ -90,7 +95,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
         </div>
 
         <div class="stats">
-            <strong id="visibleCount">{len(bookmarks)}</strong> of <strong id="totalCount">{total_count}</strong> total bookmarks
+            <strong id="visibleCount">{len(bookmarks)}</strong> {translations.get('visible_of_total', 'of')} <strong id="totalCount">{total_count}</strong> {translations.get('total_bookmarks', 'total bookmarks')}
         </div>
 
         <!-- Normal view (cards) -->
@@ -103,7 +108,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
             {self.render_bookmarks_compact(bookmarks)}
         </div>
 
-        <div id="loadingIndicator">Loading...</div>
+        <div id="loadingIndicator">{translations.get('loading', 'Loading...')}</div>
 
         <footer>
             <p>Zitzu's Bookmarks Bot - v{version}</p>
@@ -113,8 +118,8 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
         <div id="editModal" class="modal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3 id="modalTitle">Edit Bookmark</h3>
-                    <span class="close-btn" onclick="closeEditModal()" title="Close window">&times;</span>
+                    <h3 id="modalTitle">{translations.get('modal_edit_title', 'Edit Bookmark')}</h3>
+                    <span class="close-btn" onclick="closeEditModal()" title="{translations.get('tooltip_close_modal', 'Close')}">&times;</span>
                 </div>
                 <div class="modal-body">
                     <form id="editBookmarkForm">
@@ -122,44 +127,44 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
                         <div class="form-group form-group-with-button">
                             <label for="edit-url">URL: *</label>
                             <div class="input-with-button">
-                                <input type="url" id="edit-url" name="url" required title="The full URL of the bookmark to save.">
-                                <button type="button" class="btn btn-icon" id="scrapeBtn" title="Scrape metadata from URL">✨</button>
+                                <input type="url" id="edit-url" name="url" required title="{translations.get('tooltip_modal_url', 'URL...')}">
+                                <button type="button" class="btn btn-icon" id="scrapeBtn" title="{translations.get('tooltip_scrape', 'Scrape...')}">✨</button>
                             </div>
                         </div>
                         <div class="form-group" style="grid-column: 1 / -1;">
                             <label for="edit-title">Title:</label>
-                            <input type="text" id="edit-title" name="title" title="The title of the bookmark. Will be scraped if left empty.">
+                            <input type="text" id="edit-title" name="title" title="{translations.get('tooltip_modal_title', 'Title...')}">
                         </div>
                         <div class="form-group">
                             <label for="edit-image_url">Image URL:</label>
-                            <input type="url" id="edit-image_url" name="image_url" title="URL of the preview image. Will be scraped if left empty.">
+                            <input type="url" id="edit-image_url" name="image_url" title="{translations.get('tooltip_modal_image', 'Image URL...')}">
                         </div>
                         <div class="form-group">
                             <label for="edit-description">Description:</label>
-                            <textarea id="edit-description" name="description" rows="3" title="A short description of the bookmark. Will be scraped if left empty."></textarea>
+                            <textarea id="edit-description" name="description" rows="3" title="{translations.get('tooltip_modal_description', 'Description...')}"></textarea>
                         </div>
                         <div class="form-group" style="grid-column: 1 / -1;">
                             <label for="edit-comments_url">HackerNews URL:</label>
-                            <input type="url" id="edit-comments_url" name="comments_url" title="URL for the HackerNews comments page, if applicable.">
+                            <input type="url" id="edit-comments_url" name="comments_url" title="{translations.get('tooltip_modal_hn_url', 'HN URL...')}">
                         </div>
                         <div class="form-group">
                             <label for="edit-telegram_user_id">Telegram User ID:</label>
-                            <input type="number" id="edit-telegram_user_id" name="telegram_user_id" title="The Telegram User ID this bookmark is associated with (optional).">
+                            <input type="number" id="edit-telegram_user_id" name="telegram_user_id" title="{translations.get('tooltip_modal_user_id', 'User ID...')}">
                         </div>
                         <div class="form-group form-group-checkbox">
-                            <label><input type="checkbox" id="edit-is_read" name="is_read" title="Check this box if you have already read this bookmark."> Already read</label>
+                            <label><input type="checkbox" id="edit-is_read" name="is_read" title="{translations.get('tooltip_modal_is_read', 'Already read...')}"> Already read</label>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="submit" form="editBookmarkForm" class="btn btn-primary" title="Save the new or edited bookmark">Save Changes</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()" title="Discard changes and close the window">Cancel</button>
+                    <button type="submit" form="editBookmarkForm" class="btn btn-primary" title="{translations.get('tooltip_save_changes', 'Save...')}">{translations.get('save_changes', 'Save Changes')}</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()" title="{translations.get('tooltip_discard_changes', 'Cancel...')}">{translations.get('cancel', 'Cancel')}</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <button type="button" id="backToTopBtn" title="Back to top">↑</button>
+    <button type="button" id="backToTopBtn" title="{translations.get('tooltip_back_to_top', 'Back to top')}">↑</button>
 
     <script>
         // Pass initial data from server to JavaScript
@@ -167,6 +172,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
             'initialCount': {len(bookmarks)},
             'totalCount': {total_count}
         }};
+        window.TRANSLATIONS = {json.dumps(translations)};
     </script>
     <script src="/static/app.js" defer></script>
 </body>
