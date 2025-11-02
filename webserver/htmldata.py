@@ -12,6 +12,9 @@ def get_login_page(error=None):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Zitzu's Bookmarks</title>
+    <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+    <link rel="alternate icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/static/img/favicon.svg">
     <link rel="stylesheet" href="/static/style.css">
     <style>
         body {{ display: flex; align-items: center; justify-content: center; }}
