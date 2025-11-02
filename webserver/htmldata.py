@@ -7,7 +7,7 @@ def get_login_page(error=None):
     error_html = f'<div class="login-error">{error}</div>' if error else ''
     return f"""
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -47,7 +47,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
     search_value = escape_html(search_query)
 
     return f"""<!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -62,13 +62,13 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
         <h1>📚 Zitzu's Bookmarks Bot</h1>
         
         <div class="search-container">
-            <input type="text" class="search-box" id="searchBox" placeholder="🔍 Search bookmarks..." value="{search_value}">
+            <input type="text" class="search-box" id="searchBox" placeholder="🔍 Search bookmarks..." value="{search_value}" title="Search by title, URL, or description">
             <button type="button" id="clearSearchBtn" class="clear-search-btn" title="Clear search">&times;</button>
         </div>
 
         <!-- View controls -->
         <div class="view-controls">
-            <button type="button" class="view-btn add-bookmark-btn" onclick="openAddModal()">
+            <button type="button" class="view-btn add-bookmark-btn" onclick="openAddModal()" title="Add a new bookmark">
                 ➕ Add Bookmark
             </button>
             <button type="button" class="view-btn" id="sortToggleBtn" title="Change sort order">📅 Newest First</button>
@@ -79,10 +79,10 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
 
         <!-- Special filters -->
         <div class="special-filters">
-            <button class="filter-btn" onclick="filterSpecial('recent', event)">🕐 Last 7 days</button>
-            <button class="filter-btn" id="hideReadBtn" onclick="toggleHideRead()">🙈 Hide Read</button>
-            <a href="/api/export/csv" class="filter-btn" download="bookmarks.csv" target="_blank">📤 Export CSV</a>
-            <a href="/logout" class="filter-btn">🚪 Logout</a>
+            <button class="filter-btn" onclick="filterSpecial('recent', event)" title="Filter bookmarks from the last 7 days">🕐 Last 7 days</button>
+            <button class="filter-btn" id="hideReadBtn" onclick="toggleHideRead()" title="Toggle visibility of read bookmarks">🙈 Hide Read</button>
+            <a href="/api/export/csv" class="filter-btn" download="bookmarks.csv" target="_blank" title="Export all bookmarks to a CSV file">📤 Export CSV</a>
+            <a href="/logout" class="filter-btn" title="Log out from the application">🚪 Logout</a>
         </div>
 
         <div class="filter-bar" id="filterBar">
@@ -114,7 +114,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
             <div class="modal-content">
                 <div class="modal-header">
                     <h3 id="modalTitle">Edit Bookmark</h3>
-                    <span class="close-btn" onclick="closeEditModal()">&times;</span>
+                    <span class="close-btn" onclick="closeEditModal()" title="Close window">&times;</span>
                 </div>
                 <div class="modal-body">
                     <form id="editBookmarkForm">
@@ -122,38 +122,38 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
                         <div class="form-group form-group-with-button">
                             <label for="edit-url">URL: *</label>
                             <div class="input-with-button">
-                                <input type="url" id="edit-url" name="url" required>
+                                <input type="url" id="edit-url" name="url" required title="The full URL of the bookmark to save.">
                                 <button type="button" class="btn btn-icon" id="scrapeBtn" title="Scrape metadata from URL">✨</button>
                             </div>
                         </div>
                         <div class="form-group" style="grid-column: 1 / -1;">
-                            <label for="edit-title">Titolo:</label>
-                            <input type="text" id="edit-title" name="title">
+                            <label for="edit-title">Title:</label>
+                            <input type="text" id="edit-title" name="title" title="The title of the bookmark. Will be scraped if left empty.">
                         </div>
                         <div class="form-group">
                             <label for="edit-image_url">Image URL:</label>
-                            <input type="url" id="edit-image_url" name="image_url">
+                            <input type="url" id="edit-image_url" name="image_url" title="URL of the preview image. Will be scraped if left empty.">
                         </div>
                         <div class="form-group">
                             <label for="edit-description">Description:</label>
-                            <textarea id="edit-description" name="description" rows="3"></textarea>
+                            <textarea id="edit-description" name="description" rows="3" title="A short description of the bookmark. Will be scraped if left empty."></textarea>
                         </div>
                         <div class="form-group" style="grid-column: 1 / -1;">
-                            <label for="edit-comments_url">URL HackerNews:</label>
-                            <input type="url" id="edit-comments_url" name="comments_url">
+                            <label for="edit-comments_url">HackerNews URL:</label>
+                            <input type="url" id="edit-comments_url" name="comments_url" title="URL for the HackerNews comments page, if applicable.">
                         </div>
                         <div class="form-group">
                             <label for="edit-telegram_user_id">Telegram User ID:</label>
-                            <input type="number" id="edit-telegram_user_id" name="telegram_user_id">
+                            <input type="number" id="edit-telegram_user_id" name="telegram_user_id" title="The Telegram User ID this bookmark is associated with (optional).">
                         </div>
                         <div class="form-group form-group-checkbox">
-                            <label><input type="checkbox" id="edit-is_read" name="is_read"> Already read</label>
+                            <label><input type="checkbox" id="edit-is_read" name="is_read" title="Check this box if you have already read this bookmark."> Already read</label>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="submit" form="editBookmarkForm" class="btn btn-primary">Save Changes</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+                    <button type="submit" form="editBookmarkForm" class="btn btn-primary" title="Save the new or edited bookmark">Save Changes</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()" title="Discard changes and close the window">Cancel</button>
                 </div>
             </div>
         </div>
