@@ -15,6 +15,7 @@ from urllib.parse import urlparse, parse_qs
 import socket
 import sys
 from contextlib import contextmanager
+import argparse
 import secrets
 from datetime import datetime, timedelta
 from werkzeug.security import check_password_hash
@@ -939,58 +940,23 @@ def create_self_signed_cert(cert_file_path, key_file_path):
 
 def main():
     """
-    Main entry-point that starts the HTTPS server.
+    Main entry-point that starts the web server.
 
     Main actions:
       - initializes the DB (init_database)
-      - configures HTTPServer and TLS
+      - configures HTTPServer (HTTP by default, HTTPS with --https flag)
       - starts the serve_forever loop
 
     Handles KeyboardInterrupt to shut down the server gracefully.
     """
-    # --- Certificate Logic ---
-    le_domain = os.getenv('LE_DOMAIN', None)
-    logger.info(f"LE_DOMAIN letto come '{le_domain}'")
+    parser = argparse.ArgumentParser(description="HackerNews Bookmarks Web Server", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--https', action='store_true', help='Enable HTTPS mode (default is HTTP on port 80)')
+    parser.add_argument('--port', type=int, help='Specify the port for the server to listen on')
+    args = parser.parse_args()
 
-    if le_domain:
-        # Standard path for Let's Encrypt certificates in a Linux/Docker environment
-        le_cert_dir = f'/etc/letsencrypt/live/{le_domain}'
-        le_fullchain = os.path.join(le_cert_dir, 'fullchain.pem')
-        le_privkey = os.path.join(le_cert_dir, 'privkey.pem')
-
-        if os.path.exists(le_fullchain) and os.path.exists(le_privkey):
-            logger.info(f"Found Let's Encrypt certificates: {le_cert_dir}")
-            cert_file = le_fullchain
-            key_file = le_privkey
-        else:
-            logger.warning(f"LE_DOMAIN is set but certificates were not found in {le_cert_dir}. Falling back to self-signed certs.")
-            le_domain = None # Force fallback to self-signed
-
-    if not le_domain:
-        # Fallback to local self-signed certificates if LE_DOMAIN is not set or certs are not found.
-        logger.info("Using local self-signed certificates.")
-        cert_dir = os.path.join(SCRIPT_DIR, 'certs')
-        os.makedirs(cert_dir, exist_ok=True)
-        cert_file = os.path.join(cert_dir, 'server.pem')
-        key_file = os.path.join(cert_dir, 'server.key')
-
-        # Create certificate if necessary
-        if not (os.path.exists(cert_file) and os.path.exists(key_file)):
-            create_self_signed_cert(cert_file, key_file)
-
-    # Configure the server
-    server_address = ('', PORT)
-    httpd = HTTPServer(server_address, BookmarkHandler)
-
-    # Configure SSL
-    try:
-        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        context.load_cert_chain(cert_file, key_file)
-        httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
-    except ssl.SSLError as e:
-        logger.error(f"❌ Errore SSL: {e}")
-        return
+    # Initialize the database only after parsing args, so --help doesn't trigger it.
+    logger.info("Initializing database...")
+    init_database()
 
     # Get the local IP
     try:
@@ -999,19 +965,72 @@ def main():
     except Exception:
         local_ip = "IP_NOT_AVAILABLE"
 
-    # Determine the primary access URL for the log message
-    access_url = f"https://{le_domain}:{PORT}" if le_domain else f"https://www.mydomain.com:{PORT}"
+    # Determine port based on arguments
+    if args.port:
+        port = args.port
+    else:
+        if args.https:
+            port = 443  # Default HTTPS port
+        else:
+            port = 80   # Default HTTP port
+
+
+    if args.https:
+        # --- HTTPS Mode ---
+        protocol = "https"
+        le_domain = os.getenv('LE_DOMAIN', None)
+        logger.info(f"LE_DOMAIN letto come '{le_domain}'")
+
+        if le_domain:
+            le_cert_dir = f'/etc/letsencrypt/live/{le_domain}'
+            le_fullchain = os.path.join(le_cert_dir, 'fullchain.pem')
+            le_privkey = os.path.join(le_cert_dir, 'privkey.pem')
+
+            if os.path.exists(le_fullchain) and os.path.exists(le_privkey):
+                logger.info(f"Found Let's Encrypt certificates: {le_cert_dir}")
+                cert_file = le_fullchain
+                key_file = le_privkey
+            else:
+                logger.warning(f"LE_DOMAIN is set but certificates were not found in {le_cert_dir}. Falling back to self-signed certs.")
+                le_domain = None
+
+        if not le_domain:
+            logger.info("Using local self-signed certificates.")
+            cert_dir = os.path.join(SCRIPT_DIR, 'certs')
+            os.makedirs(cert_dir, exist_ok=True)
+            cert_file = os.path.join(cert_dir, 'server.pem')
+            key_file = os.path.join(cert_dir, 'server.key')
+            if not (os.path.exists(cert_file) and os.path.exists(key_file)):
+                create_self_signed_cert(cert_file, key_file)
+
+        server_address = ('', port)
+        httpd = HTTPServer(server_address, BookmarkHandler)
+
+        try:
+            context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_cert_chain(cert_file, key_file)
+            httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+            logger.info(f"🔒 Certificate: {os.path.abspath(cert_file)}")
+        except ssl.SSLError as e:
+            logger.error(f"❌ Errore SSL: {e}")
+            return
+    else:
+        # --- HTTP Mode (Default) ---
+        protocol = "http"
+        server_address = ('', port)
+        httpd = HTTPServer(server_address, BookmarkHandler)
+
+    access_url = f"{protocol}://localhost:{port}"
 
     logger.info(f"""
-🚀 HTTPS Server started!
+🚀 Server started in {protocol.upper()} mode!
 
 📍 Access from:
    • {access_url}
-   • https://127.0.0.1:{PORT}
-   • https://{local_ip}:{PORT}
+   • {protocol}://{local_ip}:{port}
 
 📁 Database: {os.path.abspath(DB_PATH)}
-🔒 Certificate: {os.path.abspath(cert_file)}
 
 ✨ NEW FEATURES:
    • ➕ Hidden form (show on request)
@@ -1034,11 +1053,7 @@ if __name__ == '__main__':
     # Add the project root to the path to import the shared library
     sys.path.append(os.path.dirname(SCRIPT_DIR))
     try:
-        # Directly import the DB initialization function
-        from shared.database import init_database
-        logger.info("Initializing database...")
-        init_database()
-        
+        from shared.database import init_database # Import remains here
         # Start the server
         main()
 
