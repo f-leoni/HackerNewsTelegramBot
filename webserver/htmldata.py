@@ -65,8 +65,9 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
             <button type="button" class="view-btn add-bookmark-btn" onclick="openAddModal()">
                 ➕ Add Bookmark
             </button>
+            <button type="button" class="view-btn" id="sortToggleBtn" title="Change sort order">📅 Newest First</button>
             <button type="button" class="view-btn" id="viewToggleBtn" title="Change view">📄 Compact View</button>
-            <button type="button" class="view-btn" id="themeToggleBtn" title="Change theme">🌙</button>
+            <button type="button" class="view-btn" id="themeToggleBtn" title="Change theme">🌙 Dark Mode</button>
             <span><small>v{version}</small></span>
         </div>
 
@@ -74,6 +75,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, search_query=None):
         <div class="special-filters">
             <button class="filter-btn" onclick="filterSpecial('recent', event)">🕐 Last 7 days</button>
             <button class="filter-btn" id="hideReadBtn" onclick="toggleHideRead()">🙈 Hide Read</button>
+            <a href="/api/export/csv" class="filter-btn" download="bookmarks.csv" target="_blank">📤 Export CSV</a>
             <a href="/logout" class="filter-btn">🚪 Logout</a>
         </div>
 

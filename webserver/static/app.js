@@ -4,6 +4,7 @@ let allLoaded = false;
 let currentOffset = 0;
 const limit = 20;
 let currentView = 'cards';
+let sortOrder = 'desc'; // 'desc' for newest first, 'asc' for oldest first
 let hideRead = true;
 let visibleCount = 0;
 let activeSpecialFilter = null;
@@ -61,6 +62,18 @@ function toggleView() {
     setView(newView);
 }
 
+// --- SORTING ---
+function toggleSort() {
+    sortOrder = sortOrder === 'desc' ? 'asc' : 'desc';
+    updateSortButton();
+    triggerSearch();
+}
+
+function updateSortButton() {
+    const btn = document.getElementById('sortToggleBtn');
+    btn.textContent = sortOrder === 'desc' ? '📅 Newest First' : '📅 Oldest First';
+}
+
 // --- FILTERS & SEARCH ---
 function triggerSearch() {
     document.getElementById('bookmarksGrid').innerHTML = '';
@@ -114,7 +127,7 @@ async function loadMoreBookmarks() {
     loadingIndicator.style.display = 'block';
 
     const searchTerm = document.getElementById('searchBox').value;
-    let apiUrl = `/api/bookmarks?offset=${currentOffset}&limit=${limit}&hide_read=${hideRead}`;
+    let apiUrl = `/api/bookmarks?offset=${currentOffset}&limit=${limit}&hide_read=${hideRead}&sort=${sortOrder}`;
     if (activeSpecialFilter) apiUrl += `&filter=${activeSpecialFilter}`;
     if (searchTerm) apiUrl += `&search=${encodeURIComponent(searchTerm)}`;
 
@@ -165,10 +178,10 @@ function applyTheme(theme) {
     const themeToggleBtn = document.getElementById('themeToggleBtn');
     if (theme === 'dark') {
         document.documentElement.classList.add('dark-mode');
-        if (themeToggleBtn) themeToggleBtn.textContent = '☀️';
+        if (themeToggleBtn) themeToggleBtn.textContent = '☀️ Light Mode';
     } else {
         document.documentElement.classList.remove('dark-mode');
-        if (themeToggleBtn) themeToggleBtn.textContent = '🌙';
+        if (themeToggleBtn) themeToggleBtn.textContent = '🌙 Dark Mode';
     }
 }
 
@@ -204,6 +217,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Event Listeners
     document.getElementById('viewToggleBtn').addEventListener('click', toggleView);
+    document.getElementById('sortToggleBtn').addEventListener('click', toggleSort);
     document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
 
     const searchBox = document.getElementById('searchBox');

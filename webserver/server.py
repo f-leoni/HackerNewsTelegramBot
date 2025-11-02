@@ -6,6 +6,7 @@ import os
 import sqlite3
 import ssl
 import json
+import csv
 import re
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -26,7 +27,7 @@ from shared.utils import extract_domain, get_article_metadata
 from shared.database import get_db_path
 from htmldata import get_html
 from htmldata import get_login_page
-__version__ = "1.6.2"
+__version__ = "1.6.3"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -103,6 +104,20 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/html')
         self.end_headers()
 
+    def do_OPTIONS(self):
+        """Handles OPTIONS pre-flight requests for CORS."""
+        self.send_response(204) # No Content
+        self.send_header('Access-Control-Allow-Origin', '*') # Or be more restrictive
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.end_headers()
+
+    def do_HEAD(self):
+        """Handles HEAD requests by delegating to do_GET and discarding the body."""
+        # This is a simple way to handle HEAD. It runs do_GET but the framework
+        # prevents the body from being sent.
+        self.do_GET()
+
     def do_GET(self):
         """
         Handles GET requests.
@@ -145,7 +160,10 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             filter_type = query_components.get("filter", [None])[0] # noqa
             search_query = query_components.get("search", [None])[0]
             hide_read = query_components.get("hide_read", ['false'])[0].lower() == 'true'
-            self.serve_bookmarks_api(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query)
+            sort_order = query_components.get("sort", ['desc'])[0].lower()
+            self.serve_bookmarks_api(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query, sort_order=sort_order)
+        elif path == '/api/export/csv':
+            self.serve_export_csv()
         else:
             self._send_error_response(404, "Not Found")
 
@@ -527,7 +545,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         return ''.join(html_items)
 
-    def serve_bookmarks_api(self, limit=20, offset=0, filter_type=None, hide_read=False, search_query=None):
+    def serve_bookmarks_api(self, limit=20, offset=0, filter_type=None, hide_read=False, search_query=None, sort_order='desc'):
         """
         API that returns the list of bookmarks in JSON format.
 
@@ -540,7 +558,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         image_url, domain, saved_at, telegram_user_id, telegram_message_id,
         comments_url, is_read.
         """
-        bookmarks = self.get_bookmarks(self.get_current_user(), limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query)
+        bookmarks = self.get_bookmarks(self.get_current_user(), limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query, sort_order=sort_order)
 
         bookmark_list = [] # noqa
         for bookmark in bookmarks:
@@ -559,6 +577,54 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             })
 
         self._send_json_response(200, bookmark_list)
+
+    def serve_export_csv(self):
+        """
+        Exports all bookmarks for the current user to a CSV file.
+        """
+        user_id = self.get_current_user()
+        if not user_id:
+            self._send_error_response(401, "Authentication required")
+            return
+
+        try:
+            # Fetch all bookmarks without pagination
+            bookmarks = self.get_bookmarks(user_id, limit=-1)
+
+            # Send headers for file download
+            from io import StringIO
+            # Use StringIO with newline='' as recommended by Python's csv module documentation
+            # This correctly handles multiline fields.
+            output = StringIO(newline='')
+            writer = csv.writer(output, quoting=csv.QUOTE_ALL)
+
+            # Write header
+            header = ['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read']
+            writer.writerow(header)
+
+            # Write data rows, manually sanitizing fields to prevent issues.
+            def sanitize_field(field):
+                if field is None:
+                    return ""
+                # Replace quotes with double quotes and remove newlines to ensure single-line rows.
+                return str(field).replace('"', '""').replace('\n', ' ').replace('\r', ' ')
+
+            for row in bookmarks:
+                sanitized_row = [sanitize_field(field) for field in row]
+                writer.writerow(sanitized_row)
+
+            csv_data = output.getvalue().encode('utf-8')
+            
+            self.send_response(200)
+            self._send_security_headers()
+            self.send_header('Content-Type', 'text/csv; charset=utf-8')
+            self.send_header('Content-Disposition', 'attachment; filename="bookmarks.csv"')
+            self.send_header('Content-Length', str(len(csv_data)))
+            self.end_headers()
+            self.wfile.write(csv_data)
+        except Exception as e:
+            logger.error(f"Error exporting CSV for user {user_id}: {e}")
+            # Cannot send error response if headers are already sent
 
     def delete_bookmark(self, bookmark_id):
         """
@@ -798,24 +864,31 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         return " AND ".join(where_clauses), params
 
-    def get_bookmarks(self, user_id, limit=20, offset=0, filter_type=None, hide_read=False, search_query=None):
+    def get_bookmarks(self, user_id, limit=20, offset=0, filter_type=None, hide_read=False, search_query=None, sort_order='desc'):
         """
         Retrieves bookmarks from the database, applying optional filters and search.
         """
         try:
             with db_connection() as cursor:
+                # Validate sort_order to prevent SQL injection
+                order = "ASC" if sort_order == 'asc' else "DESC"
+
                 where_clause, params = self._build_query_parts(user_id, filter_type, hide_read, search_query)
 
-                cursor.execute("""
+                limit_clause = "LIMIT ? OFFSET ?" if limit != -1 else ""
+                query_params = params + [limit, offset] if limit != -1 else params
+
+                query = """
                     SELECT id, url, title, description, image_url, domain,
                         datetime(saved_at, 'localtime') as saved_at,
                         telegram_user_id, telegram_message_id, comments_url,
                         COALESCE(is_read, 0) as is_read
                     FROM bookmarks
                     WHERE {where_clause}
-                    ORDER BY saved_at DESC
-                    LIMIT ? OFFSET ?
-                """.format(where_clause=where_clause), params + [limit, offset])
+                    ORDER BY saved_at {order}
+                    {limit_clause}
+                """.format(where_clause=where_clause, order=order, limit_clause=limit_clause)
+                cursor.execute(query, query_params)
 
                 bookmarks = cursor.fetchall()
             return bookmarks

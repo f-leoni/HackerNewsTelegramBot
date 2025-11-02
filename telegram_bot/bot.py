@@ -204,7 +204,7 @@ class BookmarkBot:
             web_user_id = web_user[0] if web_user else None
 
             if not web_user_id:
-                logger.error("No user found in the database. Cannot associate bookmark.")
+                logger.error("No web user found in the database. Cannot associate bookmark.")
                 return False
 
             cursor.execute(
@@ -246,7 +246,7 @@ class BookmarkBot:
         The handlers extract URLs from messages and save them as bookmarks.
         """
 
-        @self.app.on_message(filters.private)
+        @self.app.on_message(filters.private & ~filters.command(["count", "help"]))
         async def handle_private_message(client, message):
             """Handler for messages in saved messages
             
@@ -292,6 +292,57 @@ class BookmarkBot:
                 # The bot will now process messages from any private chat.
                 logger.info("-> OK: Proceeding with message analysis in private chat.")
                 await self.process_message_for_urls(message)
+
+        @self.app.on_message(filters.command("count") & filters.private)
+        async def handle_count_command(client, message):
+            """Handles the /count command to return the total number of bookmarks."""
+            db_path = get_db_path()
+            conn = None
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+
+                # Find the web user to count bookmarks for.
+                # This logic matches how bookmarks are saved.
+                cursor.execute("SELECT id FROM users ORDER BY id LIMIT 1")
+                web_user = cursor.fetchone()
+
+                if not web_user:
+                    await message.reply("No web user configured. Cannot count bookmarks.")
+                    return
+
+                web_user_id = web_user[0]
+
+                cursor.execute("SELECT COUNT(*) FROM bookmarks WHERE user_id = ?", (web_user_id,))
+                count = cursor.fetchone()[0]
+                
+                await message.reply(f"You have saved a total of **{count}** bookmarks.")
+                
+            except Exception as e:
+                logger.error(f"Error handling /count command: {e}")
+                await message.reply("Si è verificato un errore nel contare i bookmark.")
+
+        @self.app.on_message(filters.command("help") & filters.private)
+        async def handle_help_command(client, message):
+            """Handles the /help command to show usage instructions."""
+            help_text = (
+                "**Welcome to your Bookmark Bot!**\n\n"
+                "Here's how you can use me:\n\n"
+                "🔗 **Saving a link**\n"
+                "Just send a message containing one or more links. "
+                "I will automatically save them as bookmarks.\n\n"
+                "🗞️ **HackerNews Links**\n"
+                "If you send a link to an article and a link to the HackerNews comments "
+                "in the same message, I will link them into a single bookmark.\n\n"
+                "🤖 **Available commands**\n"
+                "- `/count`: Shows the total number of bookmarks you have saved.\n"
+                "- `/help`: Shows this help message.\n\n"
+                "Your bookmarks are visible in the web interface."
+            )
+            try:
+                await message.reply(help_text, disable_web_page_preview=True)
+            except Exception as e:
+                logger.error(f"Error handling /help command: {e}")
 
     async def process_message_for_urls(self, message):
         """

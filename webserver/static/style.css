@@ -134,7 +134,7 @@ h1 {
     cursor: pointer;
     line-height: 1;
     min-height: 36px;
-    min-width: 170px;
+    min-width: 160px;
     white-space: nowrap;
     flex-shrink: 0;
     box-sizing: border-box;
@@ -796,7 +796,7 @@ html.dark-mode .modal-header h3 {
 
 .form-group-checkbox {
     /* Allinea il gruppo verticalmente con gli altri campi che hanno un'etichetta sopra */
-    padding-top: 24px; 
+    padding-top: 24px;
     align-self: center;
 }
 
