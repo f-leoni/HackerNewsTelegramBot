@@ -28,7 +28,7 @@ from shared.utils import extract_domain, get_article_metadata
 from shared.database import get_db_path
 from htmldata import get_html
 from htmldata import get_login_page
-__version__ = "1.8.0"
+__version__ = "1.9.0"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -130,7 +130,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         # self.send_header('X-Content-Type-Options', 'nosniff') # Gestito da Apache
         # CSP with nonce: Allow resources from self, images from https, and inline scripts/styles ONLY if they have the correct nonce.
         # This is much more secure than 'unsafe-inline'.
-        csp = f"default-src 'self'; script-src 'self' 'nonce-{self.nonce}'; style-src 'self' 'nonce-{self.nonce}'; img-src 'self' data: https:; connect-src 'self'; form-action 'self';"
+        # We add 'https://cdn.jsdelivr.net' to script-src to allow Alpine.js from its CDN.
+        csp = f"default-src 'self'; script-src 'self' 'nonce-{self.nonce}' https://cdn.jsdelivr.net; style-src 'self' 'nonce-{self.nonce}'; img-src 'self' data: https:; connect-src 'self'; form-action 'self';"
         self.send_header('Content-Security-Policy', csp)
 
     def _redirect(self, path):
@@ -876,7 +877,22 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                     data.get('comments_url')
                 ))
 
-            self._send_json_response(201, {"status": "created"})
+                new_bookmark_id = cursor.lastrowid
+                cursor.execute("""
+                    SELECT id, url, title, description, image_url, domain,
+                        datetime(saved_at, 'localtime') as saved_at,
+                        telegram_user_id, telegram_message_id, comments_url,
+                        COALESCE(is_read, 0) as is_read
+                    FROM bookmarks WHERE id = ?
+                """, (new_bookmark_id,))
+                new_bookmark_tuple = cursor.fetchone()
+
+            if not new_bookmark_tuple:
+                self._send_error_response(500, "Failed to retrieve newly created bookmark")
+                return
+
+            new_bookmark = dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], new_bookmark_tuple))
+            self._send_json_response(201, new_bookmark)
 
         except ValueError as e:
             self._send_error_response(400, str(e))

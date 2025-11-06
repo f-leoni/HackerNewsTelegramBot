@@ -3,11 +3,7 @@ let isLoading = false;
 let allLoaded = false;
 let currentOffset = 0;
 const limit = 20;
-let currentView = 'cards';
-let sortOrder = 'desc'; // 'desc' for newest first, 'asc' for oldest first
-let hideRead = true;
 let visibleCount = 0;
-let activeSpecialFilter = null;
 let searchTimeout;
 
 function escape_html(text) {
@@ -38,42 +34,6 @@ function showToast(message, isError = false) {
     }, 3000);
 }
 
-// --- VIEW SWITCHING ---
-function setView(view) {
-    const cardsView = document.getElementById('bookmarksGrid');
-    const compactView = document.getElementById('bookmarksCompact');
-    const viewToggleBtn = document.getElementById('viewToggleBtn');
-
-    if (view === 'cards') {
-        cardsView.classList.remove('hidden');
-        compactView.classList.remove('show');
-        viewToggleBtn.innerHTML = window.TRANSLATIONS.compact_view;
-    } else {
-        cardsView.classList.add('hidden');
-        compactView.classList.add('show');
-        viewToggleBtn.innerHTML = window.TRANSLATIONS.card_view;
-    }
-    currentView = view;
-    updateVisibleCount();
-}
-
-function toggleView() {
-    const newView = currentView === 'cards' ? 'compact' : 'cards';
-    setView(newView);
-}
-
-// --- SORTING ---
-function toggleSort() {
-    sortOrder = (sortOrder === 'desc') ? 'asc' : 'desc';
-    updateSortButton(); // Aggiorna il testo del pulsante
-    triggerSearch(); // Ricarica i bookmark con il nuovo ordinamento
-}
-
-function updateSortButton() {
-    const btn = document.getElementById('sortToggleBtn');
-    btn.textContent = sortOrder === 'desc' ? window.TRANSLATIONS.sort_newest : window.TRANSLATIONS.sort_oldest;
-}
-
 // --- FILTERS & SEARCH ---
 function triggerSearch() {
     document.getElementById('bookmarksGrid').innerHTML = '';
@@ -89,32 +49,6 @@ function triggerSearch() {
     loadMoreBookmarks();
 }
 
-function filterSpecial(type, event) {
-    const clickedButton = event.target;
-    if (clickedButton.classList.contains('active')) {
-        activeSpecialFilter = null;
-        clickedButton.classList.remove('active');
-    } else {
-        document.querySelectorAll('.special-filters .filter-btn').forEach(btn => btn.classList.remove('active'));
-        clickedButton.classList.add('active');
-        activeSpecialFilter = type;
-    }
-    triggerSearch();
-}
-
-function toggleHideRead() {
-    hideRead = !hideRead;
-    localStorage.setItem('hideRead', hideRead);
-    updateHideReadButton();
-    triggerSearch();
-}
-
-function updateHideReadButton() {
-    const btn = document.getElementById('hideReadBtn');
-    btn.classList.toggle('active', hideRead);
-    btn.textContent = hideRead ? window.TRANSLATIONS.show_all : window.TRANSLATIONS.hide_read;
-}
-
 function updateVisibleCount() {
     document.getElementById('visibleCount').textContent = visibleCount;
 }
@@ -127,6 +61,10 @@ async function loadMoreBookmarks() {
     loadingIndicator.classList.remove('hidden');
 
     const searchTerm = document.getElementById('searchBox').value;
+    // Get sortOrder from the globally exposed Alpine.js component state
+    const sortOrder = window.viewControlsState?.sortOrder || 'desc';
+    const hideRead = window.viewControlsState?.hideRead ?? true;
+    const activeSpecialFilter = window.viewControlsState?.activeSpecialFilter || null;
     let apiUrl = `/api/bookmarks?offset=${currentOffset}&limit=${limit}&hide_read=${hideRead}&sort=${sortOrder}`;
     if (activeSpecialFilter) apiUrl += `&filter=${activeSpecialFilter}`;
     if (searchTerm) apiUrl += `&search=${encodeURIComponent(searchTerm)}`;
@@ -173,59 +111,15 @@ async function loadMoreBookmarks() {
     }
 }
 
-// --- THEME SWITCHING (DARK MODE) ---
-function applyTheme(theme) {
-    const themeToggleBtn = document.getElementById('themeToggleBtn');
-    if (theme === 'dark') {
-        document.documentElement.classList.add('dark-mode');
-        if (themeToggleBtn) themeToggleBtn.textContent = window.TRANSLATIONS.light_mode;
-    } else {
-        document.documentElement.classList.remove('dark-mode');
-        if (themeToggleBtn) themeToggleBtn.textContent = window.TRANSLATIONS.dark_mode;
-    }
-}
-
-function toggleTheme() {
-    const currentTheme = document.documentElement.classList.contains('dark-mode') ? 'dark' : 'light';
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('theme', newTheme);
-    applyTheme(newTheme);
-}
-
-function initializeTheme() {
-    const savedTheme = localStorage.getItem('theme');
-    const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    applyTheme(savedTheme || (systemPrefersDark ? 'dark' : 'light'));
-}
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', function() {
     // Set initial state from data passed by the server
     currentOffset = window.APP_CONFIG.initialCount;
     visibleCount = window.APP_CONFIG.initialCount;
 
-    // Restore state from localStorage
-    const savedHideRead = localStorage.getItem('hideRead');
-    hideRead = savedHideRead !== null ? JSON.parse(savedHideRead) : true;
-    updateHideReadButton();
-
-    // Initialize theme
-    initializeTheme();
-
-    // Initial view setup
-    setView('cards');
     updateVisibleCount();
 
     // Event Listeners
-    document.getElementById('viewToggleBtn').addEventListener('click', toggleView);
-    document.getElementById('sortToggleBtn').addEventListener('click', toggleSort);
-    document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
-    document.getElementById('addBookmarkBtn').addEventListener('click', openAddModal);
-    document.getElementById('hideReadBtn').addEventListener('click', toggleHideRead);
-    document.getElementById('langSelector').addEventListener('change', (e) => {
-        window.location.href = '/?lang=' + e.target.value;
-    });
-    document.getElementById('closeModalBtn').addEventListener('click', closeEditModal);
-    document.getElementById('cancelModalBtn').addEventListener('click', closeEditModal);
 
     const searchBox = document.getElementById('searchBox');
     const clearSearchBtn = document.getElementById('clearSearchBtn');
@@ -246,32 +140,10 @@ document.addEventListener('DOMContentLoaded', function() {
         triggerSearch();
     });
 
-    // Event listener for special filter buttons
-    document.querySelectorAll('.special-filters .filter-btn[data-filter]').forEach(button => {
-        button.addEventListener('click', (event) => {
-            filterSpecial(button.dataset.filter, event);
-        });
-    });
-
-    const backToTopBtn = document.getElementById('backToTopBtn');
-
     window.addEventListener('scroll', () => {
         // Infinite scroll
         if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 300) {
             loadMoreBookmarks();
-        }
-
-        // Back to top button visibility
-        if (window.scrollY > 300) {
-            if (backToTopBtn.classList.contains('hidden')) {
-                backToTopBtn.classList.remove('hidden');
-                requestAnimationFrame(() => {
-                    backToTopBtn.style.opacity = '1';
-                    backToTopBtn.style.transform = 'translateY(0)';
-                });
-            }
-        } else {
-            backToTopBtn.classList.add('hidden');
         }
     });
 
@@ -280,10 +152,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const button = event.target.closest('.icon-btn');
         if (!button) return;
 
+        // The edit button now dispatches a custom event handled by Alpine.js
         if (button.classList.contains('edit')) {
-            // L'attributo data-bookmark contiene già un oggetto JSON valido
             const bookmarkData = JSON.parse(button.dataset.bookmark);
-            openEditModal(bookmarkData);
+            window.dispatchEvent(new CustomEvent('open-edit-modal', { detail: bookmarkData }));
         }
         else if (button.classList.contains('delete')) {
             const bookmarkId = button.dataset.id;
@@ -295,156 +167,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Scrape button in modal
-    document.getElementById('scrapeBtn').addEventListener('click', async () => {
-        await scrapeAndFillData();
-    });
-
-    // Back to top click
-    backToTopBtn.addEventListener('click', () => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-    
     // Load more if the initial content is not scrollable
     if (document.body.scrollHeight <= window.innerHeight) {
         loadMoreBookmarks();
     }
 });
-
-
-// --- MODAL LOGIC ---
-const editModal = document.getElementById('editModal');
-const editForm = document.getElementById('editBookmarkForm');
-
-function openAddModal() {
-    editForm.reset();
-    document.getElementById('modalTitle').textContent = window.TRANSLATIONS.modal_add_title;
-    document.getElementById('edit-id').value = '';
-    editModal.classList.remove('hidden');
-}
-
-function openEditModal(bookmark) {
-    document.getElementById('edit-id').value = bookmark.id;
-    document.getElementById('edit-url').value = bookmark.url || '';
-    document.getElementById('edit-title').value = bookmark.title || '';
-    document.getElementById('edit-image_url').value = bookmark.image_url || '';
-    document.getElementById('edit-description').value = bookmark.description || '';
-    document.getElementById('edit-comments_url').value = bookmark.comments_url || '';
-    document.getElementById('edit-telegram_user_id').value = bookmark.telegram_user_id || '';
-    document.getElementById('edit-is_read').checked = bookmark.is_read == 1; // eslint-disable-line eqeqeq
-    document.getElementById('modalTitle').textContent = window.TRANSLATIONS.modal_edit_title;
-    editModal.classList.remove('hidden');
-}
-
-function closeEditModal() {
-    editModal.classList.add('hidden');
-}
-
-window.onclick = function(event) {
-    if (event.target == editModal) {
-        closeEditModal();
-    }
-}
-
-editForm.addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const data = Object.fromEntries(formData);
-    const id = data.id;
-
-    const isAdding = !id;
-    const method = isAdding ? 'POST' : 'PUT';
-    const url = isAdding ? '/api/bookmarks' : '/api/bookmarks/' + id;
-
-    data.is_read = document.getElementById('edit-is_read').checked ? 1 : 0;
-
-    Object.keys(data).forEach(key => {
-        if (data[key] === '') delete data[key];
-    });
-    delete data.id;
-    if (isAdding && !data.is_read) delete data.is_read;
-
-    try {
-        const response = await fetch(url, {
-            method: method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-
-        if (response.ok && !isAdding) {
-            const updatedBookmark = await response.json();
-            
-            // Trova e sostituisci la card e l'item compatto esistenti
-            const oldCard = document.querySelector(`.bookmark-card[data-id='${id}']`);
-            if (oldCard) {
-                oldCard.outerHTML = renderBookmarkCard(updatedBookmark);
-            }
-            const oldCompactItem = document.querySelector(`.compact-item[data-id='${id}']`);
-            if (oldCompactItem) {
-                oldCompactItem.outerHTML = renderBookmarkCompactItem(updatedBookmark);
-            }
-            closeEditModal();
-            showToast("Bookmark updated successfully!");
-        } else if (response.ok && isAdding) {
-            // Se l'aggiunta ha successo, aggiorna il contatore e ricarica
-            const totalCountEl = document.getElementById('totalCount');
-            if (totalCountEl) {
-                totalCountEl.textContent = parseInt(totalCountEl.textContent, 10) + 1;
-            }
-            closeEditModal();
-            triggerSearch(); // Ricarica la lista per mostrare il nuovo bookmark
-            showToast("Bookmark added successfully!");
-        } else {
-            const error = await response.json();
-            showToast("Error: " + (error.error || 'Unknown error'), true);
-        }
-    } catch (error) {
-        showToast("Connection error", true);
-    }
-});
-
-// --- SCRAPING LOGIC ---
-async function scrapeAndFillData() {
-    const urlInput = document.getElementById('edit-url');
-    let url = urlInput.value.trim();
-    if (!url) {
-        showToast("Please enter a URL before scraping.", true);
-        return;
-    }
-
-    // Aggiunge 'https://' se manca un protocollo
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        url = 'https://' + url;
-        urlInput.value = url; // Aggiorna il campo di input per coerenza
-        showToast("Protocol https:// automatically added.", false);
-    }
-
-    const scrapeBtn = document.getElementById('scrapeBtn');
-    const originalText = scrapeBtn.innerHTML;
-    scrapeBtn.innerHTML = '⏳';
-    scrapeBtn.disabled = true;
-
-    try {
-        const response = await fetch('/api/scrape', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: url })
-        });
-
-        if (!response.ok) throw new Error('Scraping fallito');
-
-        const metadata = await response.json();
-        document.getElementById('edit-title').value = metadata.title || '';
-        document.getElementById('edit-description').value = metadata.description || '';
-        document.getElementById('edit-image_url').value = metadata.image_url || '';
-        showToast("Metadata scraped successfully!");
-    } catch (error) {
-        showToast("Error during metadata scraping.", true);
-    } finally {
-        scrapeBtn.innerHTML = originalText;
-        scrapeBtn.disabled = false;
-    }
-}
 
 // --- API ACTIONS ---
 async function bookmarkDelete(id) {

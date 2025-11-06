@@ -1,3 +1,8 @@
+/* Hide elements managed by Alpine.js until it's initialized */
+[x-cloak] {
+    display: none !important;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -862,7 +867,6 @@ html.dark-mode .modal-header h3 {
 
 /* --- Back to Top Button --- */
 #backToTopBtn {
-    /* display: none; removed, now controlled by .hidden */
     position: fixed;
     bottom: 20px;
     right: 30px;
@@ -879,9 +883,6 @@ html.dark-mode .modal-header h3 {
     line-height: 50px;
     text-align: center;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    transition: opacity 0.3s, transform 0.3s;
-    opacity: 0;
-    transform: translateY(20px);
 }
 
 #backToTopBtn:hover {
@@ -902,6 +903,16 @@ html.dark-mode #backToTopBtn {
 }
 .full-width-grid-column {
     grid-column: 1 / -1;
+}
+
+/* Animation for newly added bookmarks */
+@keyframes highlight-fade {
+    from { background-color: #d4edda; } /* Light green highlight */
+    to { background-color: transparent; }
+}
+
+.newly-added {
+    animation: highlight-fade 2s ease-out;
 }
 
 }
