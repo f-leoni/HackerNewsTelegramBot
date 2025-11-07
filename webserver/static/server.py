@@ -223,11 +223,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self.serve_bookmarks_api(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query, sort_order=sort_order)
         elif path == '/api/export/csv':
             self.serve_export_csv()
-        elif path == '/ui/bookmarks': # Exact path match
+        elif path == '/ui/bookmarks':
             query_components = parse_qs(urlparse(self.path).query)
-            search_query = query_components.get("search_query", [None])[0]
+            search_query = query_components.get("search", [None])[0]
             hide_read = query_components.get("hide_read", ['false'])[0].lower() == 'true'
-            sort_order = query_components.get("sort_order", ['desc'])[0].lower()
+            sort_order = query_components.get("sort", ['desc'])[0].lower()
             filter_type = query_components.get("filter_type", [None])[0]
             limit = int(query_components.get("limit", [DEFAULT_PAGE_SIZE])[0])
             offset = int(query_components.get("offset", [0])[0])
@@ -237,7 +237,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             # Ensure correct types from query string
             limit = int(query_components.get('limit', [DEFAULT_PAGE_SIZE])[0])
             offset = int(query_components.get('offset', [0])[0])
-            hide_read = str(query_components.get('hide_read', ['false'])[0]).lower() == 'true'
+            hide_read = str(query_components.get('hide_read', 'false')).lower() == 'true'
             search_query = query_components.get('search_query', [None])[0]
             sort_order = query_components.get('sort_order', ['desc'])[0]
             filter_type = query_components.get('filter_type', [None])[0]
@@ -345,7 +345,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
     def serve_login_page(self):
         """Serves the HTML login page."""
-        # Ensure nonce exists before rendering the template that needs it.
         if not hasattr(self, 'nonce'):
             self.nonce = secrets.token_hex(16)
         self._send_html_response(200, get_login_page(self))
@@ -432,7 +431,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         bookmarks_to_render = bookmarks_raw[:DEFAULT_PAGE_SIZE]
 
         # The total count always refers to all bookmarks in the DB
-        total_count_for_filters = self.get_total_bookmark_count(self.get_current_user(), filter_type=None, hide_read=hide_read_default, search_query=None) # Initial filter
+        total_count_for_filters = self.get_total_bookmark_count(filter_type=None, hide_read=hide_read_default) # Initial filter
         
         html = get_html(self, bookmarks_to_render, __version__, total_count_for_filters, translations, has_more=has_more)
 
@@ -548,10 +547,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         has_more = len(bookmarks_raw) > limit
         bookmarks_to_render = bookmarks_raw[:limit]
         
-        # Import rendering functions here to avoid circular dependencies
-        # if they were to be moved back to htmldata top-level
-        from htmldata import render_bookmarks, render_bookmarks_compact
-
         lang_code = self.get_user_language()
         translations = load_translations(lang_code)
 
@@ -571,7 +566,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                  hx-trigger="revealed"
                  hx-swap="outerHTML"
                  hx-indicator="#loadingIndicator"
-                 :hx-vals="JSON.stringify({{'offset': {next_offset}, 'limit': {limit}, 'sort_order': '{sort_order}', 'search_query': '{search_query or ''}', 'hide_read': {str(hide_read).lower()}, 'filter_type': '{filter_type or ''}'}})"
+                 :hx-vals="JSON.stringify({{'offset': {next_offset}, 'limit': {limit}, 'sort_order': sort_order, 'search_query': search_query, 'hide_read': hide_read, 'filter_type': filter_type}})"
                  class="load-more-trigger">
                 {translations.get('loading', 'Loading more bookmarks...')}
             </div>
@@ -587,8 +582,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         <div id="bookmarksGrid" class="bookmarks-grid" hx-swap-oob="innerHTML">{rendered_cards}</div>
         <div id="bookmarksCompact" class="bookmarks-compact" hx-swap-oob="innerHTML">{rendered_compact}</div>
         <div id="loadMoreContainer" hx-swap-oob="innerHTML">{load_more_trigger}</div>
-        <span id="visibleCount" hx-swap-oob="innerHTML">{offset + len(bookmarks_to_render)}</span>
-        <span id="totalCount" hx-swap-oob="innerHTML">{total_count_for_filters}</span>
+        <div id="visibleCount" hx-swap-oob="innerHTML">{len(bookmarks_to_render)}</div>
+        <div id="totalCount" hx-swap-oob="innerHTML">{total_count_for_filters}</div>
         """
         self._send_html_response(200, html_response)
 
@@ -605,10 +600,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         
         has_more = len(bookmarks_raw) > limit
         bookmarks_to_render = bookmarks_raw[:limit]
-
-        # Import rendering functions here
-        from htmldata import render_bookmarks, render_bookmarks_compact
-
+        
         lang_code = self.get_user_language()
         translations = load_translations(lang_code)
 
@@ -644,7 +636,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         <div id="bookmarksGrid" hx-swap-oob="beforeend">{rendered_cards}</div>
         <div id="bookmarksCompact" hx-swap-oob="beforeend">{rendered_compact}</div>
         <div id="loadMoreContainer" hx-swap-oob="innerHTML">{load_more_trigger}</div>
-        <span id="visibleCount" hx-swap-oob="innerHTML" x-text="{current_total}">{current_total}</span>
+        <span id="visibleCount" hx-swap-oob="innerHTML">{current_total}</span>
         """
         self._send_html_response(200, html_response)
 
@@ -959,7 +951,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 if sort_order not in ['asc', 'desc']:
                     sort_order = 'desc' # Default to desc if invalid value is provided
                 order = sort_order.upper()
-
                 where_clause, params = self._build_query_parts(user_id, filter_type, hide_read, search_query)
 
                 limit_clause = "LIMIT ? OFFSET ?" if limit != -1 else ""

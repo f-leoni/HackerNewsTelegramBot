@@ -2,6 +2,8 @@
 Module for generating the web page HTML.
 """
 import json
+import re
+
 
 def get_login_page(self, error=None):
     """Generates the HTML for the login page."""
@@ -38,7 +40,97 @@ def get_login_page(self, error=None):
 </html>
 """
 
-def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, search_query=None):
+def render_bookmark_card(bookmark, translations):
+    """Renders a single bookmark as an HTML card."""
+    (id, url, title, description, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
+    
+    def escape_html(text):
+        if text is None: return ""
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
+
+    bookmark_data_json = json.dumps({
+        'id': id, 'url': url, 'title': title, 'description': description,
+        'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
+    }, ensure_ascii=False)
+    bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
+
+    is_read_class = 'read' if is_read else ''
+    read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
+    read_button_icon = '✅' if is_read else '✔️'
+
+    return f"""
+    <div class="bookmark-card {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
+        <div class="bookmark-content">
+            <h3 class="bookmark-title"><a href="{escape_html(url)}" target="_blank">{escape_html(title)}</a></h3>
+            <span class="bookmark-domain">{escape_html(domain)}</span>
+            
+            <div class="bookmark-actions">
+                <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">↗️</a>
+                <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
+                <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">✏️</button>
+                <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">🗑️</button>
+            </div>
+
+            <p class="bookmark-description">{escape_html(description)}</p>
+        </div>
+        <div class="bookmark-footer">
+            <img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image-footer">
+            <span class="bookmark-date">{saved_at}</span>
+            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">💬 HN Comments</a>' if comments_url else ''}
+        </div>
+    </div>
+    """
+
+def render_bookmark_compact_item(bookmark, translations):
+    """Renders a single bookmark as a compact list item."""
+    (id, url, title, _, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
+
+    def escape_html(text):
+        if text is None: return ""
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
+
+    bookmark_data_json = json.dumps({
+        'id': id, 'url': url, 'title': title, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
+    }, ensure_ascii=False)
+    bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
+
+    is_read_class = 'read' if is_read else ''
+    read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
+    read_button_icon = '✅' if is_read else '✔️'
+
+    return f"""
+    <div class="compact-item {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
+        <img src="{escape_html(image_url)}" alt="" class="compact-image">
+        <div class="image-placeholder" style="display:none;">🔗</div>
+        <div class="compact-content">
+            <a href="{escape_html(url)}" target="_blank" class="compact-title" title="{escape_html(title)}">{escape_html(title)}</a>
+            <span class="compact-domain">{escape_html(domain)}</span>
+        </div>
+        <div class="compact-date">{saved_at.split(' ')[0]}</div>
+        <div class="compact-badges">
+            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">💬</a>' if comments_url else ''}
+        </div>
+        <div class="bookmark-actions">
+            <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
+            <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">✏️</button>
+            <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">🗑️</button>
+        </div>
+    </div>
+    """
+
+def render_bookmarks(bookmarks, translations):
+    """Renders a list of bookmarks into HTML cards."""
+    if not bookmarks:
+        return f"<p>{translations.get('no_bookmarks_found', 'No bookmarks found.')}</p>"
+    return "".join(render_bookmark_card(b, translations) for b in bookmarks)
+
+def render_bookmarks_compact(bookmarks, translations):
+    """Renders a list of bookmarks into a compact HTML list."""
+    if not bookmarks:
+        return f"<p>{translations.get('no_bookmarks_found', 'No bookmarks found.')}</p>"
+    return "".join(render_bookmark_compact_item(b, translations) for b in bookmarks)
+
+def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, search_query=None, has_more=False):
     # HTML escape function to avoid issues with quotes in data
     def escape_html(text):
         if text is None:
@@ -46,7 +138,28 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
 
     search_value = escape_html(search_query)
+    self.DEFAULT_PAGE_SIZE = 20 # Ensure this is consistent with server.py
 
+    # Helper function to render the load more trigger
+    def _render_load_more_trigger(current_visible_count, total_count_for_filters, translations, has_more_items):
+        if has_more_items:
+            next_offset = current_visible_count
+            return f"""
+            <div id="loadMoreTrigger" hx-get="/ui/bookmarks/scroll"
+                 hx-trigger="revealed"
+                 hx-swap="outerHTML"
+                 hx-indicator="#loadingIndicator"
+                 :hx-vals="JSON.stringify({{'offset': {next_offset}, 'limit': {self.DEFAULT_PAGE_SIZE}, 'sort_order': sortOrder, 'search_query': searchQuery, 'hide_read': hideRead, 'filter_type': activeSpecialFilter}})"
+                 class="load-more-trigger">
+                {translations.get('loading', 'Loading more bookmarks...')}
+            </div>
+            """
+        else:
+            return f"""
+            <div id="loadMoreTrigger" class="load-more-trigger no-more-items">
+                {translations.get('all_bookmarks_loaded', 'All bookmarks have been loaded.')}
+            </div>
+            """
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -58,15 +171,27 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
     <link rel="apple-touch-icon" href="/static/img/favicon.svg">
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.x.x/dist/cdn.min.js" nonce="{self.nonce}" defer></script>
+    <meta name="htmx-config" content='{{"defaultSwapTransition": "true"}}'>
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous" nonce="{self.nonce}"></script>
     <script nonce="{self.nonce}">
         // Define Alpine.js components. This script runs after Alpine.js is loaded.
         document.addEventListener('alpine:init', () => {{
+            // Register a global magic property to unescape HTML entities
+            Alpine.magic('unescapeHtml', () => {{
+                return function(html) {{
+                    const doc = new DOMParser().parseFromString(html, 'text/html');
+                    return doc.documentElement.textContent;
+                }}
+            }});
+
             Alpine.data('viewControls', () => ({{
                 theme: 'light',
+                JSON: window.JSON, // Expose JSON object to this component's scope
                 view: 'cards',
                 sortOrder: 'desc',
                 hideRead: true,
                 activeSpecialFilter: null,
+                searchQuery: '{search_value}',
                 init: function() {{
                     const savedTheme = localStorage.getItem('theme');
                     const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -75,10 +200,17 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     const savedHideRead = localStorage.getItem('hideRead');
                     this.hideRead = savedHideRead !== null ? JSON.parse(savedHideRead) : true;
 
+                    const savedView = localStorage.getItem('view');
+                    this.view = savedView || 'cards'; // Default to cards if not saved
+
                     // Apply theme to html tag initially
                     document.documentElement.classList.toggle('dark-mode', this.theme === 'dark');
-                    // Expose component state to global scope for app.js
-                    window.viewControlsState = this;
+
+                    // Watch for changes in searchQuery and trigger an htmx request.
+                    // This is the CSP-compliant way to link Alpine state to htmx triggers.
+                    this.$watch('searchQuery', () => {{
+                        htmx.trigger('#searchBox', 'search', {{}});
+                    }});
                 }},
                 toggleTheme: function() {{
                     this.theme = (this.theme === 'dark' ? 'light' : 'dark');
@@ -88,16 +220,23 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                 }},
                 toggleView: function() {{
                     this.view = (this.view === 'cards' ? 'compact' : 'cards');
+                    // Persist view state
+                    localStorage.setItem('view', this.view);
+                    // No htmx request needed here, Alpine.js handles the class toggling
                 }},
                 toggleSort: function() {{
                     this.sortOrder = (this.sortOrder === 'desc' ? 'asc' : 'desc');
-                    // Call the global function from app.js to reload bookmarks
-                    triggerSearch();
+                    // Con htmx, non è più necessario chiamare triggerSearch() per l'ordinamento.
+                    // Il pulsante stesso si occuperà di fare la richiesta.
+                    // Lasciamo la funzione qui perché potrebbe essere usata da altre parti.
+                    // triggerSearch();
                 }},
                 toggleHideRead: function() {{
                     this.hideRead = !this.hideRead;
                     localStorage.setItem('hideRead', this.hideRead);
-                    triggerSearch();
+                    // Con htmx, non è più necessario chiamare triggerSearch().
+                    // Il pulsante stesso si occuperà di fare la richiesta.
+                    // triggerSearch();
                 }},
                 toggleSpecialFilter: function(filter) {{
                     this.activeSpecialFilter = this.activeSpecialFilter === filter ? null : filter;
@@ -183,22 +322,22 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                             if (oldCompactItem) oldCompactItem.outerHTML = renderBookmarkCompactItem(updatedBookmark);
                         }}
 
-                        showToast(isAdding ? "Bookmark added successfully!" : "Bookmark updated successfully!");
+                        showToast(isAdding ? (window.TRANSLATIONS.toast_bookmark_added_success || "Bookmark added successfully!") : (window.TRANSLATIONS.toast_bookmark_updated_success || "Bookmark updated successfully!"));
                         this.close();
                     }} catch (error) {{
-                        showToast(`Error: ${{error.message}}`, true);
+                        showToast(`${{window.TRANSLATIONS.toast_error_prefix || "Error: "}}${{error.message}}`, true);
                     }}
                 }},
 
                 scrape: async function() {{
                     if (!this.bookmark.url) {{
-                        showToast("Please enter a URL before scraping.", true);
+                        showToast(window.TRANSLATIONS.toast_url_required_for_scrape || "Please enter a URL before scraping.", true);
                         return;
                     }}
                     // Add 'https://' if the protocol is missing
                     if (!this.bookmark.url.startsWith('http://') && !this.bookmark.url.startsWith('https://')) {{
                         this.bookmark.url = 'https://' + this.bookmark.url;
-                        showToast("Protocol https:// automatically added.", false);
+                        showToast(window.TRANSLATIONS.toast_protocol_added || "Protocol https:// automatically added.", false);
                     }}
 
                     this.isLoading = true;
@@ -209,9 +348,9 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                         this.bookmark.title = metadata.title || this.bookmark.title;
                         this.bookmark.description = metadata.description || this.bookmark.description;
                         this.bookmark.image_url = metadata.image_url || this.bookmark.image_url;
-                        showToast("Metadata scraped successfully!");
+                        showToast(window.TRANSLATIONS.toast_metadata_scraped_success || "Metadata scraped successfully!", false);
                     }} catch (error) {{
-                        showToast("Error during metadata scraping.", true);
+                        showToast(window.TRANSLATIONS.toast_error_scraping_metadata || "Error during metadata scraping.", true);
                     }} finally {{
                         this.isLoading = false;
                     }}
@@ -233,10 +372,21 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
 <body x-data>
     <div class="container" x-data="viewControls">
         <h1>{translations.get('header', 'Bookmarks')}</h1>
-        
+
         <div class="search-container">
-            <input type="text" class="search-box" id="searchBox" placeholder="{translations.get('search_placeholder', 'Search...')}" value="{search_value}" title="{translations.get('tooltip_search', 'Search...')}">
-            <button type="button" id="clearSearchBtn" class="clear-search-btn" title="{translations.get('tooltip_clear_search', 'Clear search')}">&times;</button>
+            <input type="search" class="search-box" id="searchBox" name="search"
+                   placeholder="{translations.get('search_placeholder', 'Search...')}"
+                   value="{search_value}"
+                   title="{translations.get('tooltip_search', 'Search...')}"
+                   x-model="searchQuery"
+                   x-ref="searchBox"
+                   hx-get="/ui/bookmarks"
+                   hx-trigger="keyup changed delay:500ms, search"
+                   hx-target="body" 
+                   hx-swap="none"
+                   :hx-vals="JSON.stringify({{'sort_order': sortOrder, 'hide_read': hideRead, 'filter_type': activeSpecialFilter, 'search_query': searchQuery, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
+            >
+            <button type="button" id="clearSearchBtn" class="clear-search-btn" title="{translations.get('tooltip_clear_search', 'Clear search')}" x-show="searchQuery" @click="searchQuery = ''" x-cloak>&times;</button>
         </div>
 
         <!-- View controls -->
@@ -244,7 +394,16 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
             <button type="button" class="view-btn add-bookmark-btn" title="{translations.get('tooltip_add_bookmark', 'Add bookmark')}" @click="$dispatch('open-add-modal')">
                 {translations.get('add_bookmark', 'Add Bookmark')}
             </button>
-            <button type="button" class="view-btn" id="sortToggleBtn" title="{translations.get('tooltip_change_sort', 'Change sort order')}" x-on:click="toggleSort()" x-text="sortOrder === 'desc' ? '{translations.get('sort_newest', 'Newest First')}' : '{translations.get('sort_oldest', 'Oldest First')}'"></button>
+            <button type="button" class="view-btn" id="sortToggleBtn" 
+                    title="{translations.get('tooltip_change_sort', 'Change sort order')}" 
+                    x-on:click="toggleSort()" 
+                    x-text="sortOrder === 'desc' ? '{translations.get('sort_newest', 'Newest First')}' : '{translations.get('sort_oldest', 'Oldest First')}'"
+                    hx-get="/ui/bookmarks"
+                    hx-trigger="click"
+                    hx-target="body"
+                    hx-swap="none"
+                    :hx-vals="JSON.stringify({{'sort_order': sortOrder === 'desc' ? 'asc' : 'desc', 'search_query': searchQuery, 'hide_read': hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
+            ></button>
             <button type="button" class="view-btn" id="viewToggleBtn" title="{translations.get('tooltip_change_view', 'Change view')}" x-on:click="toggleView()" x-text="view === 'cards' ? '{translations.get('compact_view', 'Compact View')}' : '{translations.get('card_view', 'Card View')}'"></button>
             <button type="button" class="view-btn" id="themeToggleBtn" title="{translations.get('tooltip_change_theme', 'Change theme')}" x-on:click="toggleTheme()" x-text="theme === 'dark' ? '{translations.get('light_mode', 'Light Mode')}' : '{translations.get('dark_mode', 'Dark Mode')}'"></button>
             <select id="langSelector" class="view-btn" title="{translations.get('tooltip_change_language', 'Change language')}" @change="changeLanguage($event)">
@@ -256,8 +415,17 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
 
         <!-- Special filters -->
         <div class="special-filters">
-            <button class="filter-btn" @click="toggleSpecialFilter('recent')" :class="{{ 'active': activeSpecialFilter === 'recent' }}" title="{translations.get('tooltip_filter_7_days', 'Filter...')}">{translations.get('filter_7_days', 'Last 7 days')}</button>
-            <button class="filter-btn" id="hideReadBtn" @click="toggleHideRead()" :class="{{ 'active': hideRead }}" title="{translations.get('tooltip_toggle_read', 'Toggle read...')}">{translations.get('hide_read', 'Hide Read')}</button>
+            <button class="filter-btn" @click="toggleSpecialFilter('recent')" :class="{{'active': activeSpecialFilter === 'recent'}}" title="{translations.get('tooltip_filter_7_days', 'Filter...')}">{translations.get('filter_7_days', 'Last 7 days')}</button>
+            <button class="filter-btn" id="hideReadBtn"
+                    @click="toggleHideRead()" 
+                    :class="{{'active': hideRead}}" 
+                    title="{translations.get('tooltip_toggle_read', 'Toggle read...')}"
+                    hx-get="/ui/bookmarks"
+                    hx-trigger="click"
+                    hx-target="body"
+                    hx-swap="none"
+                    :hx-vals="JSON.stringify({{'sort_order': sortOrder, 'search_query': searchQuery, 'hide_read': !hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
+            >{translations.get('hide_read', 'Hide Read')}</button>
             <a href="/api/export/csv" class="filter-btn" download="bookmarks.csv" target="_blank" title="{translations.get('tooltip_export_csv', 'Export...')}">{translations.get('export_csv', 'Export CSV')}</a>
             <a href="/logout" class="filter-btn" title="{translations.get('tooltip_logout', 'Logout...')}">{translations.get('logout', 'Logout')}</a>
         </div>
@@ -270,15 +438,19 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
             <strong id="visibleCount">{len(bookmarks)}</strong> {translations.get('visible_of_total', 'of')} <strong id="totalCount">{total_count}</strong> {translations.get('total_bookmarks', 'total bookmarks')}
         </div>
 
-        <!-- Normal view (cards) -->
-        <div class="bookmarks-grid" id="bookmarksGrid" :class="view === 'cards' ? '' : 'hidden'">
-            {self.render_bookmarks(bookmarks, translations)}
-        </div>
+        <div id="bookmarkViewsContainer">
+            <!-- Normal view (cards) -->
+            <div class="bookmarks-grid" :class="view === 'cards' ? '' : 'hidden'" id="bookmarksGrid">
+                {render_bookmarks(bookmarks, translations)}
+            </div>
 
-        <!-- Compact view -->
-        <div class="bookmarks-compact" id="bookmarksCompact" :class="view === 'compact' ? 'show' : ''">
-            {self.render_bookmarks_compact(bookmarks, translations)}
+            <!-- Compact view -->
+            <div class="bookmarks-compact" :class="view === 'compact' ? '' : 'hidden'" id="bookmarksCompact">
+                {render_bookmarks_compact(bookmarks, translations)}
+            </div>
         </div>
+        
+        <div id="loadMoreContainer">{_render_load_more_trigger(len(bookmarks), total_count, translations, has_more)}</div>
 
         <div id="loadingIndicator">{translations.get('loading', 'Loading...')}</div>
 

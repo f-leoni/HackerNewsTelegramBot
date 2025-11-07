@@ -53,5 +53,15 @@
     "tooltip_mark_as_read": "Segna come letto",
     "tooltip_mark_as_unread": "Segna come non letto",
     "tooltip_edit": "Modifica",
-    "tooltip_delete": "Elimina"
+    "tooltip_delete": "Elimina",
+    "toast_marked_as_read": "Segnato come letto",
+    "toast_marked_as_unread": "Segnato come non letto",
+    "toast_bookmark_deleted": "Segnalibro eliminato!",
+    "toast_bookmark_added_success": "Segnalibro aggiunto con successo!",
+    "toast_bookmark_updated_success": "Segnalibro aggiornato con successo!",
+    "toast_error_prefix": "Errore: ",
+    "toast_url_required_for_scrape": "Inserisci un URL prima di fare lo scraping.",
+    "toast_protocol_added": "Protocollo https:// aggiunto automaticamente.",
+    "toast_metadata_scraped_success": "Metadati estratti con successo!",
+    "toast_error_scraping_metadata": "Errore durante l'estrazione dei metadati."
 }

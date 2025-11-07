@@ -53,5 +53,15 @@
     "tooltip_mark_as_read": "Mark as read",
     "tooltip_mark_as_unread": "Mark as unread",
     "tooltip_edit": "Edit",
-    "tooltip_delete": "Delete"
+    "tooltip_delete": "Delete",
+    "toast_marked_as_read": "Marked as read",
+    "toast_marked_as_unread": "Marked as unread",
+    "toast_bookmark_deleted": "Bookmark deleted!",
+    "toast_bookmark_added_success": "Bookmark added successfully!",
+    "toast_bookmark_updated_success": "Bookmark updated successfully!",
+    "toast_error_prefix": "Error: ",
+    "toast_url_required_for_scrape": "Please enter a URL before scraping.",
+    "toast_protocol_added": "Protocol https:// automatically added.",
+    "toast_metadata_scraped_success": "Metadata scraped successfully!",
+    "toast_error_scraping_metadata": "Error during metadata scraping."
 }
