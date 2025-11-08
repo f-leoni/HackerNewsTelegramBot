@@ -2,8 +2,6 @@
 Module for generating the web page HTML.
 """
 import json
-import re
-
 
 def get_login_page(self, error=None):
     """Generates the HTML for the login page."""
@@ -53,7 +51,7 @@ def render_bookmark_card(bookmark, translations):
     (id, url, title, description, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
     
     def escape_html(text):
-        if text is None: return ""
+        if text is None: return ""  # noqa: E701
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
 
     bookmark_data_json = json.dumps({
@@ -94,7 +92,7 @@ def render_bookmark_compact_item(bookmark, translations):
     (id, url, title, _, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
 
     def escape_html(text):
-        if text is None: return ""
+        if text is None: return ""  # noqa: E701
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
 
     bookmark_data_json = json.dumps({
@@ -126,12 +124,12 @@ def render_bookmark_compact_item(bookmark, translations):
     </div>
     """
 
-def render_bookmark_card(bookmark, translations):
+def render_bookmark_card2(bookmark, translations):
     """Renders a single bookmark as an HTML card."""
     (id, url, title, description, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
     
     def escape_html(text):
-        if text is None: return ""
+        if text is None: return ""  # noqa: E701
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
 
     bookmark_data_json = json.dumps({
@@ -170,12 +168,12 @@ def render_bookmark_card(bookmark, translations):
     </div>
     """
 
-def render_bookmark_compact_item(bookmark, translations):
+def render_bookmark_compact_item2(bookmark, translations):
     """Renders a single bookmark as a compact list item."""
     (id, url, title, _, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
 
     def escape_html(text):
-        if text is None: return ""
+        if text is None: return ""  # noqa: E701
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
 
     bookmark_data_json = json.dumps({
@@ -316,10 +314,9 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                 }},
                 toggleSort: function() {{
                     this.sortOrder = (this.sortOrder === 'desc' ? 'asc' : 'desc');
-                    // Con htmx, non è più necessario chiamare triggerSearch() per l'ordinamento.
-                    // Il pulsante stesso si occuperà di fare la richiesta.
-                    // Lasciamo la funzione qui perché potrebbe essere usata da altre parti.
-                    // triggerSearch();
+                    // With htmx, it's no longer necessary to call a function for sorting.
+                    // The button itself will handle making the request.
+                    // We'll leave this method here as it might be used by other parts.
                 }},
                 toggleHideRead: function() {{
                     this.hideRead = !this.hideRead;

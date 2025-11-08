@@ -28,7 +28,7 @@ from shared.utils import extract_domain, get_article_metadata
 from shared.database import get_db_path
 from htmldata import get_html, render_bookmarks, render_bookmarks_compact
 from htmldata import get_login_page
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -128,7 +128,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         # CSP: include script-src-elem and style-src-elem / style-src-attr to cover
         # dynamically created <script>/<style> elements and inline style attributes.
-        # La gestione degli indicatori di htmx è stata spostata su CSS per evitare 'unsafe-inline'.
+        # Handling of htmx indicators has been moved to CSS to avoid 'unsafe-inline'.
         csp = (
             f"default-src 'self'; "
             f"script-src 'self' 'nonce-{self.nonce}' https://cdn.jsdelivr.net https://unpkg.com; "
@@ -243,7 +243,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             filter_type = query_components.get('filter_type', [None])[0]
             self.serve_bookmarks_scroll_ui(search_query=search_query, hide_read=hide_read, sort_order=sort_order, filter_type=filter_type, limit=limit, offset=offset)
         elif path == '/favicon.ico':
-            self.path = '/static/img/favicon.svg' # Reindirizza la richiesta standard alla nostra SVG
+            self.path = '/static/img/favicon.svg' # Redirect the standard request to our SVG
             self.serve_static_file()
         else:
             self._send_error_response(404, "Not Found")
