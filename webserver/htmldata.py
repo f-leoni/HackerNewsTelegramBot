@@ -165,7 +165,7 @@ def render_bookmark_card(bookmark, translations):
         <p class="bookmark-description">{escape_html(description)}</p>
         <div class="bookmark-footer">
             <span class="bookmark-date">{saved_at}</span>
-            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN} HN Comments</a>' if comments_url else ''}
+            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN} {translations.get("modal_hn_comments", "HN Comments:")}</a>' if comments_url else ''}
         </div>
     </div>
     """

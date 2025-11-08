@@ -27,6 +27,7 @@
     "modal_label_hn_url": "URL HackerNews",
     "modal_label_user_id": "ID Utente Telegram",
     "modal_label_is_read": "Già letto",
+    "modal_hn_comments": "Commenti HN",
     "save_changes": "Salva Modifiche",
     "cancel": "Annulla",
     "confirm_delete": "Sei sicuro di voler eliminare questo segnalibro?",
