@@ -46,9 +46,6 @@ h1 {
     background: rgba(0,0,0,0.06);
 }
 
-.icon-btn.delete { color: #c82333; }
-.icon-btn.read { color: #28a745; }
-
 .form-group {
     margin-bottom: 15px;
 }
@@ -337,6 +334,10 @@ html.dark-mode .compact-image::before, html.dark-mode .bookmark-image-footer::be
     align-items: center;
     gap: 2px;
 }
+
+.icon-btn.read { color: #28a745; }
+.icon-btn.delete { color: #c82333; }
+.icon-btn.edit { color: #007bff; }
 
 .hn-link:hover {
     text-decoration: underline;

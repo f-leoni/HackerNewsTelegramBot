@@ -38,6 +38,104 @@ def get_login_page(self, error=None):
 </html>
 """
 
+# --- Icon Definitions ---
+ICON_OPEN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>'
+ICON_EDIT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>'
+ICON_DELETE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>'
+ICON_READ = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+ICON_UNREAD = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>'
+ICON_HN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
+
+def render_bookmark_card(bookmark, translations):
+    """Renders a single bookmark as an HTML card."""
+    (id, url, title, description, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
+    
+    def escape_html(text):
+        if text is None: return ""
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
+
+    bookmark_data_json = json.dumps({
+        'id': id, 'url': url, 'title': title, 'description': description,
+        'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
+    }, ensure_ascii=False)
+    bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
+
+    is_read_class = 'read' if is_read else ''
+    read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
+    read_button_icon = ICON_READ if is_read else ICON_UNREAD
+
+    return f"""
+    <div class="bookmark-card {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
+        <div class="bookmark-content">
+            <h3 class="bookmark-title"><a href="{escape_html(url)}" target="_blank">{escape_html(title)}</a></h3>
+            <span class="bookmark-domain">{escape_html(domain)}</span>
+            
+            <div class="bookmark-actions">
+                <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>
+                <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
+                <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
+                <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
+            </div>
+
+            <p class="bookmark-description">{escape_html(description)}</p>
+        </div>
+        <div class="bookmark-footer">
+            <img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image-footer">
+            <span class="bookmark-date">{saved_at}</span>
+            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN} HN Comments</a>' if comments_url else ''}
+        </div>
+    </div>
+    """
+
+def render_bookmark_compact_item(bookmark, translations):
+    """Renders a single bookmark as a compact list item."""
+    (id, url, title, _, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
+
+    def escape_html(text):
+        if text is None: return ""
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
+
+    bookmark_data_json = json.dumps({
+        'id': id, 'url': url, 'title': title, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
+    }, ensure_ascii=False)
+    bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
+
+    is_read_class = 'read' if is_read else ''
+    read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
+    read_button_icon = ICON_READ if is_read else ICON_UNREAD
+
+    return f"""
+    <div class="compact-item {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
+        <img src="{escape_html(image_url)}" alt="" class="compact-image">
+        <div class="image-placeholder" style="display:none;">🔗</div>
+        <div class="compact-content">
+            <a href="{escape_html(url)}" target="_blank" class="compact-title" title="{escape_html(title)}">{escape_html(title)}</a>
+            <span class="compact-domain">{escape_html(domain)}</span>
+        </div>
+        <div class="compact-date">{saved_at.split(' ')[0]}</div>
+        <div class="compact-badges">
+            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN}</a>' if comments_url else ''}
+        </div>
+        <div class="bookmark-actions">
+            <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
+            <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
+            <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
+        </div>
+    </div>
+    """
+
+def render_bookmarks(bookmarks, translations):
+    """Renders a list of bookmarks into HTML cards."""
+    if not bookmarks:
+        return f"<p>{translations.get('no_bookmarks_found', 'No bookmarks found.')}</p>"
+    return "".join(render_bookmark_card(b, translations) for b in bookmarks)
+
+def render_bookmarks_compact(bookmarks, translations):
+    """Renders a list of bookmarks into a compact HTML list."""
+    if not bookmarks:
+        return f"<p>{translations.get('no_bookmarks_found', 'No bookmarks found.')}</p>"
+    return "".join(render_bookmark_compact_item(b, translations) for b in bookmarks)
+
 def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, search_query=None, has_more=False):
     # HTML escape function to avoid issues with quotes in data
     def escape_html(text):
@@ -56,7 +154,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                  hx-trigger="revealed"
                  hx-swap="outerHTML"
                  hx-indicator="#loadingIndicator"
-                 :hx-vals="JSON.stringify({{'offset': {next_offset}, 'limit': {self.DEFAULT_PAGE_SIZE}, 'sort_order': sortOrder, 'search_query': searchQuery, 'hide_read': hideRead, 'filter_type': activeSpecialFilter}})"
+                 :hx-vals="JSON.stringify({{'offset': {next_offset}, 'limit': {self.DEFAULT_PAGE_SIZE}, 'sort_order': viewControlsState.sortOrder, 'search_query': $refs.searchBox.value, 'hide_read': viewControlsState.hideRead, 'filter_type': viewControlsState.activeSpecialFilter}})"
                  class="load-more-trigger">
                 {translations.get('loading', 'Loading more bookmarks...')}
             </div>
@@ -281,7 +379,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                    hx-swap="none"
                    :hx-vals="JSON.stringify({{'sort_order': sortOrder, 'hide_read': hideRead, 'filter_type': activeSpecialFilter, 'search_query': $refs.searchBox.value, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
             >
-            <button type="button" id="clearSearchBtn" class="clear-search-btn" title="{translations.get('tooltip_clear_search', 'Clear search')}" x-show="searchQuery" @click="searchQuery = '';" x-cloak>&times;</button>
+            <button type="button" id="clearSearchBtn" class="clear-search-btn" title="{translations.get('tooltip_clear_search', 'Clear search')}" x-show="$refs.searchBox.value" @click="$refs.searchBox.value = ''; $refs.searchBox.dispatchEvent(new Event('search'))" x-cloak>&times;</button>
         </div>
 
         <!-- View controls -->
@@ -297,7 +395,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     hx-trigger="click"
                     hx-target="body"
                     hx-swap="none"
-                    :hx-vals="JSON.stringify({{'sort_order': sortOrder === 'desc' ? 'asc' : 'desc', 'search_query': searchQuery, 'hide_read': hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
+                    :hx-vals="JSON.stringify({{'sort_order': sortOrder, 'search_query': $refs.searchBox.value, 'hide_read': hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
             ></button>
             <button type="button" class="view-btn" id="viewToggleBtn" title="{translations.get('tooltip_change_view', 'Change view')}" x-on:click="toggleView()" x-text="view === 'cards' ? '{translations.get('compact_view', 'Compact View')}' : '{translations.get('card_view', 'Card View')}'"></button>
             <button type="button" class="view-btn" id="themeToggleBtn" title="{translations.get('tooltip_change_theme', 'Change theme')}" x-on:click="toggleTheme()" x-text="theme === 'dark' ? '{translations.get('light_mode', 'Light Mode')}' : '{translations.get('dark_mode', 'Dark Mode')}'"></button>
@@ -319,7 +417,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     hx-trigger="click"
                     hx-target="body"
                     hx-swap="none"
-                    :hx-vals="JSON.stringify({{'sort_order': sortOrder, 'search_query': searchQuery, 'hide_read': !hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
+                    :hx-vals="JSON.stringify({{'sort_order': sortOrder, 'search_query': $refs.searchBox.value, 'hide_read': !hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
             >{translations.get('hide_read', 'Hide Read')}</button>
             <a href="/api/export/csv" class="filter-btn" download="bookmarks.csv" target="_blank" title="{translations.get('tooltip_export_csv', 'Export...')}">{translations.get('export_csv', 'Export CSV')}</a>
             <a href="/logout" class="filter-btn" title="{translations.get('tooltip_logout', 'Logout...')}">{translations.get('logout', 'Logout')}</a>
@@ -345,7 +443,9 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
             </div>
         </div>
         
-        <div id="loadMoreContainer">{_render_load_more_trigger(len(bookmarks), total_count, translations, has_more)}</div>
+        <div id="loadMoreContainer">
+            {_render_load_more_trigger(len(bookmarks), translations, has_more)}
+        </div>
         
         <div id="loadingIndicator">{translations.get('loading', 'Loading...')}</div>
 
@@ -423,391 +523,6 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
     <script src="/static/app.js" defer></script>
 </body>
 </html>"""
-
-def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, search_query=None, has_more=False):
-    # HTML escape function to avoid issues with quotes in data
-    def escape_html(text):
-        if text is None:
-            return ""
-        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
-
-    search_value = escape_html(search_query)
-    self.DEFAULT_PAGE_SIZE = 20 # Ensure this is consistent with server.py
-
-    # Helper function to render the load more trigger
-    def _render_load_more_trigger(current_visible_count, total_count_for_filters, translations, has_more_items):
-        if has_more_items:
-            next_offset = current_visible_count
-            return f"""
-            <div id="loadMoreTrigger" hx-get="/ui/bookmarks/scroll"
-                 hx-trigger="revealed"
-                 hx-swap="outerHTML"
-                 hx-indicator="#loadingIndicator"
-                 :hx-vals="JSON.stringify({{'offset': {next_offset}, 'limit': {self.DEFAULT_PAGE_SIZE}, 'sort': viewControlsState.sortOrder, 'search': $refs.searchBox.value, 'hide_read': viewControlsState.hideRead, 'filter': viewControlsState.activeSpecialFilter}})"
-                 class="load-more-trigger">
-                {translations.get('loading', 'Loading more bookmarks...')}
-            </div>
-            """
-        else:
-            return f"""
-            <div id="loadMoreTrigger" class="load-more-trigger no-more-items">
-                {translations.get('all_bookmarks_loaded', 'All bookmarks have been loaded.')}
-            </div>
-            """
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Call the helper function to render the initial load more trigger
-    initial_load_more_html = _render_load_more_trigger(len(bookmarks), total_count, translations, has_more)
-
-    # ... (rest of the HTML content)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    # ... (existing stats section)
-
-    # The main HTML structure
-    # ... (existing HTML structure)
-
-    # Update the stats section to include the loadMoreContainer
-    d>
-</html>
 
 def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, search_query=None, has_more=False):
     # HTML escape function to avoid issues with quotes in data

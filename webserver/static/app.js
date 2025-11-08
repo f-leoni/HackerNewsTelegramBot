@@ -34,39 +34,39 @@ function showToast(message, isError = false) {
  * @returns {string} - The HTML string for the bookmark card.
  */
 function renderBookmarkCard(bookmark) {
+    // These must match the icons in htmldata.py
+    const ICON_OPEN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
+    const ICON_EDIT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
+    const ICON_DELETE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>';
+    const ICON_READ = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
+    const ICON_UNREAD = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>';
+    const ICON_HN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
+
     const translations = window.TRANSLATIONS || {};
-    const imageHtml = bookmark.image_url ? `<img src="${bookmark.image_url}" alt="Preview" class="bookmark-image">` : '<div class="bookmark-image image-placeholder">🔗</div>';
-    const hnLink = bookmark.comments_url ? `<a href="${bookmark.comments_url}" target="_blank" class="hn-link" title="${translations.tooltip_hn_comments || 'View HackerNews comments'}">🗞️ HN</a>` : '';
     const isRead = bookmark.is_read == 1;
     const readButtonTitle = isRead ? (translations.tooltip_mark_as_unread || "Mark as unread") : (translations.tooltip_mark_as_read || "Mark as read");
-    const readButtonIcon = isRead
-        ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>'
-        : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    
+    const readButtonIcon = isRead ? ICON_READ : ICON_UNREAD;
     const bookmarkJson = JSON.stringify(bookmark).replace(/'/g, "&#39;").replace(/"/g, '&quot;');
 
     return `
-    <div class="bookmark-card" data-id="${bookmark.id}" data-is-read="${bookmark.is_read}">
-        <div class="bookmark-header">
-            ${imageHtml}
-            <div class="bookmark-info">
-                <div class="bookmark-actions-top">
-                    ${hnLink}
-                    <button class="icon-btn read" title="${readButtonTitle}" data-id="${bookmark.id}">${readButtonIcon}</button>
-                    <button class="icon-btn edit" title="${translations.tooltip_edit || 'Edit'}" data-bookmark='${bookmarkJson}'>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </button>
-                    <button class="icon-btn delete" title="${translations.tooltip_delete || 'Delete'}" data-id="${bookmark.id}">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                    </button>
-                </div>
-                <div class="bookmark-title">${bookmark.title || 'Untitled'}</div>
+    <div class="bookmark-card ${isRead ? 'read' : ''}" data-id="${bookmark.id}" data-is-read="${isRead ? 1 : 0}">
+        <div class="bookmark-content">
+            <h3 class="bookmark-title"><a href="${bookmark.url}" target="_blank">${bookmark.title || 'Untitled'}</a></h3>
+            <span class="bookmark-domain">${bookmark.domain}</span>
+            
+            <div class="bookmark-actions">
+                <a href="${bookmark.url}" target="_blank" class="icon-btn" title="${translations.tooltip_open_link || 'Open link'}">${ICON_OPEN}</a>
+                <button class="icon-btn read" data-id="${bookmark.id}" title="${readButtonTitle}">${readButtonIcon}</button>
+                <button class="icon-btn edit" title="${translations.tooltip_edit || 'Edit'}" @click="$dispatch('open-edit-modal', JSON.parse(this.dataset.bookmark))" data-bookmark='${bookmarkJson}'>${ICON_EDIT}</button>
+                <button class="icon-btn delete" data-id="${bookmark.id}" title="${translations.tooltip_delete || 'Delete'}">${ICON_DELETE}</button>
             </div>
+
+            <p class="bookmark-description">${bookmark.description || ''}</p>
         </div>
-        <a href="${bookmark.url}" target="_blank" class="bookmark-url" title="${translations.tooltip_open_link || 'Open link'}">${bookmark.url}</a>
-        <div class="bookmark-description">${bookmark.description || 'No description'}</div>
         <div class="bookmark-footer">
+            <img src="${bookmark.image_url}" alt="Preview" class="bookmark-image-footer">
             <span class="bookmark-date">${bookmark.saved_at}</span>
+            ${bookmark.comments_url ? `<a href="${bookmark.comments_url}" target="_blank" class="hn-link" title="${translations.tooltip_hn_comments || 'View HN comments'}">${ICON_HN} HN Comments</a>` : ''}
         </div>
     </div>`;
 }
@@ -78,37 +78,37 @@ function renderBookmarkCard(bookmark) {
  * @returns {string} - The HTML string for the compact list item.
  */
 function renderBookmarkCompactItem(bookmark) {
+    // These must match the icons in htmldata.py
+    const ICON_EDIT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
+    const ICON_DELETE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>';
+    const ICON_READ = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
+    const ICON_UNREAD = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>';
+    const ICON_HN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
+
     const translations = window.TRANSLATIONS || {};
-    const imageHtml = bookmark.image_url ? `<img src="${bookmark.image_url}" alt="Preview" class="compact-image">` : '<div class="compact-image">🔗</div>';
-    const hnLink = bookmark.comments_url ? `<a href="${bookmark.comments_url}" target="_blank" class="hn-link" title="${translations.tooltip_hn_comments || 'View HackerNews comments'}">HN</a>` : '';
-    const badgesHtml = hnLink ? `<div class="compact-badges">${hnLink}</div>` : '';
     const shortDate = bookmark.saved_at.split(' ')[0];
     const isRead = bookmark.is_read == 1;
     const readButtonTitle = isRead ? (translations.tooltip_mark_as_unread || "Mark as unread") : (translations.tooltip_mark_as_read || "Mark as read");
-    const readButtonIcon = isRead
-        ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>'
-        : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
+    const readButtonIcon = isRead ? ICON_READ : ICON_UNREAD;
     const bookmarkJson = JSON.stringify(bookmark).replace(/'/g, "&#39;").replace(/"/g, '&quot;');
 
     return `
-    <div class="compact-item" data-id="${bookmark.id}" data-is-read="${bookmark.is_read}">
-        ${imageHtml}
+    <div class="compact-item ${isRead ? 'read' : ''}" data-id="${bookmark.id}" data-is-read="${isRead ? 1 : 0}">
+        <img src="${bookmark.image_url}" alt="" class="compact-image">
+        <div class="image-placeholder" style="display:none;">🔗</div>
         <div class="compact-content">
-            <div class="compact-actions-top">
-                ${badgesHtml}
-                <button class="icon-btn read" title="${readButtonTitle}" data-id="${bookmark.id}">${readButtonIcon}</button>
-                <button class="icon-btn edit" title="${translations.tooltip_edit || 'Edit'}" data-bookmark='${bookmarkJson}'>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <button class="icon-btn delete" title="${translations.tooltip_delete || 'Delete'}" data-id="${bookmark.id}">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                </button>
-            </div>
-            <div class="compact-title">${bookmark.title || 'Untitled'}</div>
-            <a href="${bookmark.url}" target="_blank" class="compact-url" title="${translations.tooltip_open_link || 'Open link'}">${bookmark.url}</a>
+            <a href="${bookmark.url}" target="_blank" class="compact-title" title="${bookmark.title}">${bookmark.title || 'Untitled'}</a>
+            <span class="compact-domain">${bookmark.domain}</span>
         </div>
         <div class="compact-date">${shortDate}</div>
+        <div class="compact-badges">
+            ${bookmark.comments_url ? `<a href="${bookmark.comments_url}" target="_blank" class="hn-link" title="${translations.tooltip_hn_comments || 'View HN comments'}">${ICON_HN}</a>` : ''}
+        </div>
+        <div class="bookmark-actions">
+            <button class="icon-btn read" data-id="${bookmark.id}" title="${readButtonTitle}">${readButtonIcon}</button>
+            <button class="icon-btn edit" title="${translations.tooltip_edit || 'Edit'}" @click="$dispatch('open-edit-modal', JSON.parse(this.dataset.bookmark))" data-bookmark='${bookmarkJson}'>${ICON_EDIT}</button>
+            <button class="icon-btn delete" data-id="${bookmark.id}" title="${translations.tooltip_delete || 'Delete'}">${ICON_DELETE}</button>
+        </div>
     </div>`;
 }
 
@@ -165,12 +165,12 @@ document.addEventListener('click', function(event) {
                 document.querySelectorAll(`[data-id='${bookmarkId}']`).forEach(el => {
                     el.dataset.isRead = data.is_read;
                     // Optionally, re-render the button to update its icon and title
-                    const newReadButton = el.querySelector('.icon-btn.read');
-                    if (newReadButton) {
-                        newReadButton.title = data.is_read ? (translations.tooltip_mark_as_unread || "Mark as unread") : (translations.tooltip_mark_as_read || "Mark as read");
-                        newReadButton.innerHTML = data.is_read
-                            ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>'
-                            : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+                    const readButton = el.querySelector('.icon-btn.read');
+                    if (readButton) {
+                        const ICON_READ = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
+                        const ICON_UNREAD = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>';
+                        readButton.title = data.is_read ? (translations.tooltip_mark_as_unread || "Mark as unread") : (translations.tooltip_mark_as_read || "Mark as read");
+                        readButton.innerHTML = data.is_read ? ICON_READ : ICON_UNREAD;
                     }
                 });
                 showToast(data.is_read ? (translations.toast_marked_as_read || "Marked as read") : (translations.toast_marked_as_unread || "Marked as unread"));

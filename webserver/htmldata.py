@@ -40,6 +40,14 @@ def get_login_page(self, error=None):
 </html>
 """
 
+# --- Icon Definitions ---
+ICON_OPEN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>'
+ICON_EDIT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>'
+ICON_DELETE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>'
+ICON_READ = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+ICON_UNREAD = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>'
+ICON_HN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
+
 def render_bookmark_card(bookmark, translations):
     """Renders a single bookmark as an HTML card."""
     (id, url, title, description, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
@@ -56,7 +64,7 @@ def render_bookmark_card(bookmark, translations):
 
     is_read_class = 'read' if is_read else ''
     read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
-    read_button_icon = '✅' if is_read else '✔️'
+    read_button_icon = ICON_READ if is_read else ICON_UNREAD
 
     return f"""
     <div class="bookmark-card {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
@@ -65,10 +73,10 @@ def render_bookmark_card(bookmark, translations):
             <span class="bookmark-domain">{escape_html(domain)}</span>
             
             <div class="bookmark-actions">
-                <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">↗️</a>
+                <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>
                 <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
-                <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">✏️</button>
-                <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">🗑️</button>
+                <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
+                <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
             </div>
 
             <p class="bookmark-description">{escape_html(description)}</p>
@@ -76,7 +84,7 @@ def render_bookmark_card(bookmark, translations):
         <div class="bookmark-footer">
             <img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image-footer">
             <span class="bookmark-date">{saved_at}</span>
-            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">💬 HN Comments</a>' if comments_url else ''}
+            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN} HN Comments</a>' if comments_url else ''}
         </div>
     </div>
     """
@@ -96,7 +104,7 @@ def render_bookmark_compact_item(bookmark, translations):
 
     is_read_class = 'read' if is_read else ''
     read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
-    read_button_icon = '✅' if is_read else '✔️'
+    read_button_icon = ICON_READ if is_read else ICON_UNREAD
 
     return f"""
     <div class="compact-item {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
@@ -108,12 +116,90 @@ def render_bookmark_compact_item(bookmark, translations):
         </div>
         <div class="compact-date">{saved_at.split(' ')[0]}</div>
         <div class="compact-badges">
-            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">💬</a>' if comments_url else ''}
+            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN}</a>' if comments_url else ''}
         </div>
         <div class="bookmark-actions">
             <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
-            <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">✏️</button>
-            <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">🗑️</button>
+            <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
+            <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
+        </div>
+    </div>
+    """
+
+def render_bookmark_card(bookmark, translations):
+    """Renders a single bookmark as an HTML card."""
+    (id, url, title, description, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
+    
+    def escape_html(text):
+        if text is None: return ""
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
+
+    bookmark_data_json = json.dumps({
+        'id': id, 'url': url, 'title': title, 'description': description,
+        'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
+    }, ensure_ascii=False)
+    bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
+
+    is_read_class = 'read' if is_read else ''
+    read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
+    read_button_icon = ICON_READ if is_read else ICON_UNREAD
+
+    return f"""
+    <div class="bookmark-card {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
+        <div class="bookmark-content">
+            <h3 class="bookmark-title"><a href="{escape_html(url)}" target="_blank">{escape_html(title)}</a></h3>
+            <span class="bookmark-domain">{escape_html(domain)}</span>
+            
+            <div class="bookmark-actions">
+                <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>
+                <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
+                <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
+                <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
+            </div>
+
+            <p class="bookmark-description">{escape_html(description)}</p>
+        </div>
+        <div class="bookmark-footer">
+            <img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image-footer">
+            <span class="bookmark-date">{saved_at}</span>
+            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN} HN Comments</a>' if comments_url else ''}
+        </div>
+    </div>
+    """
+
+def render_bookmark_compact_item(bookmark, translations):
+    """Renders a single bookmark as a compact list item."""
+    (id, url, title, _, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
+
+    def escape_html(text):
+        if text is None: return ""
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
+
+    bookmark_data_json = json.dumps({
+        'id': id, 'url': url, 'title': title, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
+    }, ensure_ascii=False)
+    bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
+
+    is_read_class = 'read' if is_read else ''
+    read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
+    read_button_icon = ICON_READ if is_read else ICON_UNREAD
+
+    return f"""
+    <div class="compact-item {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
+        <img src="{escape_html(image_url)}" alt="" class="compact-image">
+        <div class="image-placeholder" style="display:none;">🔗</div>
+        <div class="compact-content">
+            <a href="{escape_html(url)}" target="_blank" class="compact-title" title="{escape_html(title)}">{escape_html(title)}</a>
+            <span class="compact-domain">{escape_html(domain)}</span>
+        </div>
+        <div class="compact-date">{saved_at.split(' ')[0]}</div>
+        <div class="compact-badges">
+            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN}</a>' if comments_url else ''}
+        </div>
+        <div class="bookmark-actions">
+            <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
+            <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
+            <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
         </div>
     </div>
     """
@@ -171,7 +257,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
     <link rel="apple-touch-icon" href="/static/img/favicon.svg">
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.x.x/dist/cdn.min.js" nonce="{self.nonce}" defer></script>
-    <meta name="htmx-config" content='{{"defaultSwapTransition": "true"}}'>
+    <meta name="htmx-config" content='{{"defaultSwapTransition": false}}'>
     <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous" nonce="{self.nonce}"></script>
     <script nonce="{self.nonce}">
         // Define Alpine.js components. This script runs after Alpine.js is loaded.
@@ -386,7 +472,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                    hx-swap="none"
                    :hx-vals="JSON.stringify({{'sort_order': sortOrder, 'hide_read': hideRead, 'filter_type': activeSpecialFilter, 'search_query': searchQuery, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
             >
-            <button type="button" id="clearSearchBtn" class="clear-search-btn" title="{translations.get('tooltip_clear_search', 'Clear search')}" x-show="searchQuery" @click="searchQuery = ''" x-cloak>&times;</button>
+            <button type="button" id="clearSearchBtn" class="clear-search-btn" title="{translations.get('tooltip_clear_search', 'Clear search')}" x-show="searchQuery" @click="searchQuery = '';" x-cloak>&times;</button>
         </div>
 
         <!-- View controls -->
