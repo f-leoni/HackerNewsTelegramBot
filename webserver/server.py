@@ -635,13 +635,18 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             </div>
             """
 
-        # We return the new bookmarks to append, and the updated loadMoreTrigger
-        # The visibleCount also needs to be updated.
+        # When scrolling, we append the new items to their containers
+        # and replace the trigger with the next one.
+        # The response should contain the items to append AND the next trigger.
         html_response = f"""
-        <div id="bookmarksGrid" hx-swap-oob="beforeend">{rendered_cards}</div>
-        <div id="bookmarksCompact" hx-swap-oob="beforeend">{rendered_compact}</div>
-        <div id="loadMoreContainer" hx-swap-oob="innerHTML">{load_more_trigger}</div>
-        <span id="visibleCount" hx-swap-oob="innerHTML" x-text="{current_total}">{current_total}</span>
+        <div id="bookmarksGrid" hx-swap-oob="beforeend">
+            {rendered_cards}
+        </div>
+        <div id="bookmarksCompact" hx-swap-oob="beforeend">
+            {rendered_compact}
+        </div>
+        <span id="visibleCount" hx-swap-oob="innerHTML">{current_total}</span>
+        {load_more_trigger}
         """
         self._send_html_response(200, html_response)
 

@@ -929,9 +929,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         where_clauses = ["user_id = ?"]
         params = [user_id]
 
-        if filter_type == 'recent':
-            where_clauses.append("saved_at >= datetime('now', '-7 days')")
-
         if hide_read:
             where_clauses.append("is_read = 0")
 

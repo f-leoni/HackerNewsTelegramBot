@@ -146,21 +146,24 @@ def render_bookmark_card(bookmark, translations):
 
     return f"""
     <div class="bookmark-card {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
-        <div class="bookmark-content">
-            <h3 class="bookmark-title"><a href="{escape_html(url)}" target="_blank">{escape_html(title)}</a></h3>
-            <span class="bookmark-domain">{escape_html(domain)}</span>
-            
-            <div class="bookmark-actions">
-                <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>
-                <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
-                <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
-                <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
+        <div class="bookmark-main">
+            <div class="bookmark-visuals">
+                <div class="bookmark-actions">
+                    <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>
+                    <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
+                    <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
+                    <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
+                </div>
+                <div class="image-placeholder">
+                    <img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image">
+                </div>
             </div>
-
-            <p class="bookmark-description">{escape_html(description)}</p>
+            <div class="bookmark-details">
+                <h3 class="bookmark-title"><a href="{escape_html(url)}" target="_blank">{escape_html(title)}</a></h3>
+            </div>
         </div>
+        <p class="bookmark-description">{escape_html(description)}</p>
         <div class="bookmark-footer">
-            <img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image-footer">
             <span class="bookmark-date">{saved_at}</span>
             {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN} HN Comments</a>' if comments_url else ''}
         </div>
@@ -186,8 +189,9 @@ def render_bookmark_compact_item(bookmark, translations):
 
     return f"""
     <div class="compact-item {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
-        <img src="{escape_html(image_url)}" alt="" class="compact-image">
-        <div class="image-placeholder" style="display:none;">🔗</div>
+        <div class="image-placeholder">
+            <img src="{escape_html(image_url)}" alt="" class="compact-image">
+        </div>
         <div class="compact-content">
             <a href="{escape_html(url)}" target="_blank" class="compact-title" title="{escape_html(title)}">{escape_html(title)}</a>
             <span class="compact-domain">{escape_html(domain)}</span>
@@ -328,7 +332,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     this.activeSpecialFilter = this.activeSpecialFilter === filter ? null : filter;
                     // Ensure other special filters are deactivated if you add more in the future
                     // For now, this is enough.
-                    triggerSearch();
+                    htmx.trigger('#searchBox', 'search');
                 }},
                 changeLanguage: function(event) {{
                     window.location.href = '/?lang=' + event.target.value;
@@ -501,7 +505,6 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
 
         <!-- Special filters -->
         <div class="special-filters">
-            <button class="filter-btn" @click="toggleSpecialFilter('recent')" :class="{{'active': activeSpecialFilter === 'recent'}}" title="{translations.get('tooltip_filter_7_days', 'Filter...')}">{translations.get('filter_7_days', 'Last 7 days')}</button>
             <button class="filter-btn" id="hideReadBtn"
                     @click="toggleHideRead()" 
                     :class="{{'active': hideRead}}" 
@@ -554,7 +557,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                 <div class="modal-body">
                     <form @submit.prevent="submit">
                         <input type="hidden" x-model="bookmark.id">
-                        <div class="form-group form-group-with-button">
+                        <div class="form-group full-width-grid-column form-group-with-button">
                             <label for="edit-url">URL: *</label>
                             <div class="input-with-button">
                                 <input type="url" id="edit-url" required title="{translations.get('tooltip_modal_url', 'URL...')}" x-model="bookmark.url">
@@ -565,27 +568,27 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                             </div>
                         </div>
                         <div class="form-group full-width-grid-column">
-                            <label for="edit-title">Title:</label>
+                            <label for="edit-title">{translations.get('modal_label_title', 'Title')}:</label>
                             <input type="text" id="edit-title" title="{translations.get('tooltip_modal_title', 'Title...')}" x-model="bookmark.title">
                         </div>
-                        <div class="form-group">
-                            <label for="edit-image_url">Image URL:</label>
+                        <div class="form-group full-width-grid-column">
+                            <label for="edit-image_url">{translations.get('modal_label_image_url', 'Image URL')}:</label>
                             <input type="url" id="edit-image_url" title="{translations.get('tooltip_modal_image', 'Image URL...')}" x-model="bookmark.image_url">
                         </div>
-                        <div class="form-group">
-                            <label for="edit-description">Description:</label>
+                        <div class="form-group full-width-grid-column">
+                            <label for="edit-description">{translations.get('modal_label_description', 'Description')}:</label>
                             <textarea id="edit-description" rows="3" title="{translations.get('tooltip_modal_description', 'Description...')}" x-model="bookmark.description"></textarea>
                         </div>
                         <div class="form-group full-width-grid-column">
-                            <label for="edit-comments_url">HackerNews URL:</label>
+                            <label for="edit-comments_url">{translations.get('modal_label_hn_url', 'HackerNews URL')}:</label>
                             <input type="url" id="edit-comments_url" title="{translations.get('tooltip_modal_hn_url', 'HN URL...')}" x-model="bookmark.comments_url">
                         </div>
                         <div class="form-group">
-                            <label for="edit-telegram_user_id">Telegram User ID:</label>
+                            <label for="edit-telegram_user_id">{translations.get('modal_label_user_id', 'Telegram User ID')}:</label>
                             <input type="number" id="edit-telegram_user_id" title="{translations.get('tooltip_modal_user_id', 'User ID...')}" x-model="bookmark.telegram_user_id">
                         </div>
                         <div class="form-group form-group-checkbox">
-                            <label><input type="checkbox" id="edit-is_read" title="{translations.get('tooltip_modal_is_read', 'Already read...')}" x-model="bookmark.is_read"> Already read</label>
+                            <label><input type="checkbox" id="edit-is_read" title="{translations.get('tooltip_modal_is_read', 'Already read...')}" x-model="bookmark.is_read"> {translations.get('modal_label_is_read', 'Already read')}</label>
                         </div>
                     </form>
                 </div>

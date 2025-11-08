@@ -120,12 +120,11 @@ function renderBookmarkCompactItem(bookmark) {
  */
 document.addEventListener('error', function(event) {
     const target = event.target;
-    if (target.tagName.toLowerCase() === 'img') {
+    // Check if the target is an image and is inside an image-placeholder
+    if (target.tagName.toLowerCase() === 'img' && target.parentElement.classList.contains('image-placeholder')) {
         target.style.display = 'none';
-        // If there's a sibling with the 'image-placeholder' class, show it.
-        if (target.nextElementSibling && target.nextElementSibling.classList.contains('image-placeholder')) {
-            target.nextElementSibling.style.display = 'flex';
-        }
+        // Add the 'has-error' class to the parent placeholder to show the fallback icon via CSS
+        target.parentElement.classList.add('has-error');
     }
 }, true); // Use capture phase to catch the error early.
 
