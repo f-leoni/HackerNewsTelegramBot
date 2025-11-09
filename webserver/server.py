@@ -26,9 +26,8 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 
 from shared.utils import extract_domain, get_article_metadata
 from shared.database import get_db_path
-from htmldata import get_html, render_bookmarks, render_bookmarks_compact
-from htmldata import get_login_page
-__version__ = "2.0.1"
+from .htmldata import get_html, render_bookmarks, render_bookmarks_compact, get_login_page
+__version__ = "2.0.2"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -547,10 +546,6 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         
         has_more = len(bookmarks_raw) > limit
         bookmarks_to_render = bookmarks_raw[:limit]
-        
-        # Import rendering functions here to avoid circular dependencies
-        # if they were to be moved back to htmldata top-level
-        from htmldata import render_bookmarks, render_bookmarks_compact
 
         lang_code = self.get_user_language()
         translations = load_translations(lang_code)

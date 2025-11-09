@@ -35,13 +35,16 @@ def get_db_path():
     return os.path.join(db_dir, "bookmarks.db")
 
 
-def init_database():
+def init_database(conn=None):
     """
     Initializes the database, creates the table if it doesn't exist, and runs migrations.
     This is the single source of truth for the DB schema.
+    If a connection object is passed, it uses it; otherwise, it creates a new one.
     """
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES, check_same_thread=False)
+    # If no connection is passed, create a new one. The caller is responsible for closing it.
+    if conn is None:
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES, check_same_thread=False)
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -94,5 +97,4 @@ def init_database():
         logger.warning("Could not perform database migration: %s", e)
 
     conn.commit()
-    logger.info("Database inizializzato: %s", db_path)
     return conn

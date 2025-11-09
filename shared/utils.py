@@ -10,18 +10,30 @@ logger = logging.getLogger(__name__)
 
 def extract_domain(url):
     """
-    Estrae il dominio (host) da un URL.
-
-    Input: string `url`.
-    Output: dominio in minuscolo senza il prefisso 'www.' quando presente.
-    In caso di errore ritorna stringa vuota.
+    Extracts the domain (host) from a URL.
+    
+    Args:
+        url (str): The input URL string.
+    Returns:
+        str: The domain in lowercase, without the 'www.' prefix if present.
+             Returns an empty string in case of an error.
     """
     try:
         parsed = urlparse(url)
-        domain = parsed.netloc.lower()
-        # Rimuovi www. se presente
+        # If urlparse doesn't find a scheme, it puts the domain in 'path'.
+        # We handle this case to correctly parse URLs like 'www.google.com'.
+        if not parsed.netloc and parsed.path:
+            domain = parsed.path.lower()
+        else:
+            domain = parsed.netloc.lower()
+
+        # Remove 'www.' prefix if present
         if domain.startswith('www.'):
             domain = domain[4:]
+        
+        # A simple validation: a valid domain should contain at least one dot.
+        if '.' not in domain:
+            return ''
         return domain
     except Exception:
         return ''

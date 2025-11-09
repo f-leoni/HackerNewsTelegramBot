@@ -60,27 +60,30 @@ def render_bookmark_card(bookmark, translations):
     }, ensure_ascii=False)
     bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
 
-    is_read_class = 'read' if is_read else ''
+    class_attr = f"bookmark-card {'read' if is_read else ''}".strip()
     read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
     read_button_icon = ICON_READ if is_read else ICON_UNREAD
 
     return f"""
-    <div class="bookmark-card {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
-        <div class="bookmark-content">
-            <h3 class="bookmark-title"><a href="{escape_html(url)}" target="_blank">{escape_html(title)}</a></h3>
-            <span class="bookmark-domain">{escape_html(domain)}</span>
-            
-            <div class="bookmark-actions">
-                <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>
-                <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
-                <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
-                <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
+    <div class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}">
+        <div class="bookmark-main">
+            <div class="bookmark-visuals">
+                <div class="image-placeholder">
+                    <img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image">
+                </div>
+                <div class="bookmark-actions">
+                    <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>
+                    <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
+                    <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
+                    <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
+                </div>
             </div>
-
-            <p class="bookmark-description">{escape_html(description)}</p>
+            <div class="bookmark-details">
+                <h3 class="bookmark-title"><a href="{escape_html(url)}" target="_blank">{escape_html(title)}</a></h3>
+            </div>
         </div>
+        <p class="bookmark-description">{escape_html(description)}</p>
         <div class="bookmark-footer">
-            <img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image-footer">
             <span class="bookmark-date">{saved_at}</span>
             {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN} HN Comments</a>' if comments_url else ''}
         </div>
@@ -100,96 +103,14 @@ def render_bookmark_compact_item(bookmark, translations):
     }, ensure_ascii=False)
     bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
 
-    is_read_class = 'read' if is_read else ''
+    class_attr = f"compact-item {'read' if is_read else ''}".strip()
     read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
     read_button_icon = ICON_READ if is_read else ICON_UNREAD
 
     return f"""
-    <div class="compact-item {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
+    <div class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}">
         <img src="{escape_html(image_url)}" alt="" class="compact-image">
         <div class="image-placeholder" style="display:none;">🔗</div>
-        <div class="compact-content">
-            <a href="{escape_html(url)}" target="_blank" class="compact-title" title="{escape_html(title)}">{escape_html(title)}</a>
-            <span class="compact-domain">{escape_html(domain)}</span>
-        </div>
-        <div class="compact-date">{saved_at.split(' ')[0]}</div>
-        <div class="compact-badges">
-            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN}</a>' if comments_url else ''}
-        </div>
-        <div class="bookmark-actions">
-            <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
-            <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
-            <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
-        </div>
-    </div>
-    """
-
-def render_bookmark_card2(bookmark, translations):
-    """Renders a single bookmark as an HTML card."""
-    (id, url, title, description, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
-    
-    def escape_html(text):
-        if text is None: return ""  # noqa: E701
-        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
-
-    bookmark_data_json = json.dumps({
-        'id': id, 'url': url, 'title': title, 'description': description,
-        'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
-    }, ensure_ascii=False)
-    bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
-
-    is_read_class = 'read' if is_read else ''
-    read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
-    read_button_icon = ICON_READ if is_read else ICON_UNREAD
-
-    return f"""
-    <div class="bookmark-card {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
-        <div class="bookmark-main">
-            <div class="bookmark-visuals">
-                <div class="bookmark-actions">
-                    <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>
-                    <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
-                    <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
-                    <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
-                </div>
-                <div class="image-placeholder">
-                    <img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image">
-                </div>
-            </div>
-            <div class="bookmark-details">
-                <h3 class="bookmark-title"><a href="{escape_html(url)}" target="_blank">{escape_html(title)}</a></h3>
-            </div>
-        </div>
-        <p class="bookmark-description">{escape_html(description)}</p>
-        <div class="bookmark-footer">
-            <span class="bookmark-date">{saved_at}</span>
-            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN} {translations.get("modal_hn_comments", "HN Comments:")}</a>' if comments_url else ''}
-        </div>
-    </div>
-    """
-
-def render_bookmark_compact_item2(bookmark, translations):
-    """Renders a single bookmark as a compact list item."""
-    (id, url, title, _, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
-
-    def escape_html(text):
-        if text is None: return ""  # noqa: E701
-        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
-
-    bookmark_data_json = json.dumps({
-        'id': id, 'url': url, 'title': title, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
-    }, ensure_ascii=False)
-    bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
-
-    is_read_class = 'read' if is_read else ''
-    read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
-    read_button_icon = ICON_READ if is_read else ICON_UNREAD
-
-    return f"""
-    <div class="compact-item {is_read_class}" data-id="{id}" data-is-read="{1 if is_read else 0}">
-        <div class="image-placeholder">
-            <img src="{escape_html(image_url)}" alt="" class="compact-image">
-        </div>
         <div class="compact-content">
             <a href="{escape_html(url)}" target="_blank" class="compact-title" title="{escape_html(title)}">{escape_html(title)}</a>
             <span class="compact-domain">{escape_html(domain)}</span>

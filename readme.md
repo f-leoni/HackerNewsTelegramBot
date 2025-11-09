@@ -8,34 +8,34 @@ A Telegram bot and a companion web server to save and manage bookmarks from Hack
 *   **Web Interface**: A modern web UI to view, search, filter, and manage your bookmarks.
 *   **Metadata Scraping**: Automatically fetches the title, description, and preview image for each link.
 *   **HackerNews Integration**: Special handling for HackerNews links to associate an article with its comments page.
-*   **Multi-user & Multilingual Support**: The web interface supports multiple users and is available in English and Italian, with automatic language detection and a manual selector.
+*   **Multi-user & Multilingual Support**: The web interface supports multiple users and is available in English and Italian, with automatic language detection and a manual selector. It's easily extensible to other languages.
 *   **Dockerized**: All services (bot, webserver, database migration) are containerized for a consistent and isolated environment.
+*   **Testing Suite**: Includes a suite of unit and integration tests to ensure code quality and reliability.
 
 ---
 
-## 🇮🇹 Istruzioni per l'Avvio con Docker
+## 🚀 Getting Started with Docker
 
-### Prerequisiti
+### Prerequisites
 
 *   [Docker](https://www.docker.com/get-started)
 *   [Docker Compose](https://docs.docker.com/compose/install/)
 
-### 1. Configurazione
+### 1. Setup
 
-Prima di avviare l'applicazione, è necessario configurare alcune variabili d'ambiente.
+Before launching the application, you need to configure a few environment variables.
 
-#### a. Configura il Bot
+#### a. Configure the Bot
 
-Crea un file chiamato `.env` all'interno della cartella `telegram_bot/`.
+Create a file named `.env` inside the `telegram_bot/` folder.
 
 ```bash
-# Esempio di file: telegram_bot/.env
-
+# Example file: telegram_bot/.env
 API_ID=1234567
 API_HASH=abcdef1234567890abcdef1234567890
 BOT_TOKEN=1234567890:ABC-DEF1234567890ABC-DEF1234567890
 
-# Imposta il nome utente del webserver a cui il bot assocerà i bookmark
+# Set the webserver username to which the bot will associate the bookmarks
 WEB_USERNAME=my_web_user
 ```
 
