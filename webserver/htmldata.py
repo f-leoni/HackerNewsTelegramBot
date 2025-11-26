@@ -74,7 +74,7 @@ def render_bookmark_card(bookmark, translations):
                 <div class="bookmark-actions">
                     <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>
                     <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
-                    <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
+                    <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', $unescapeHtml('{bookmark_json_html}'))">{ICON_EDIT}</button>
                     <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
                 </div>
             </div>
@@ -99,7 +99,7 @@ def render_bookmark_compact_item(bookmark, translations):
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
 
     bookmark_data_json = json.dumps({
-        'id': id, 'url': url, 'title': title, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
+        'id': id, 'url': url, 'title': title, 'description': _, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
     }, ensure_ascii=False)
     bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
 
@@ -121,7 +121,7 @@ def render_bookmark_compact_item(bookmark, translations):
         </div>
         <div class="bookmark-actions">
             <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
-            <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', JSON.parse($unescapeHtml('{bookmark_json_html}')))">{ICON_EDIT}</button>
+            <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', $unescapeHtml('{bookmark_json_html}'))">{ICON_EDIT}</button>
             <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
         </div>
     </div>
@@ -158,7 +158,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                  hx-trigger="revealed"
                  hx-swap="outerHTML"
                  hx-indicator="#loadingIndicator"
-                 :hx-vals="JSON.stringify({{'offset': {next_offset}, 'limit': {self.DEFAULT_PAGE_SIZE}, 'sort_order': sortOrder, 'search_query': searchQuery, 'hide_read': hideRead, 'filter_type': activeSpecialFilter}})"
+                 :hx-vals="safeJsonStringify({{'offset': {next_offset}, 'limit': {self.DEFAULT_PAGE_SIZE}, 'sort_order': sortOrder, 'search_query': searchQuery, 'hide_read': hideRead, 'filter_type': activeSpecialFilter}})"
                  class="load-more-trigger">
                 {translations.get('loading', 'Loading more bookmarks...')}
             </div>
@@ -195,12 +195,15 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
 
             Alpine.data('viewControls', () => ({{
                 theme: 'light',
-                JSON: window.JSON, // Expose JSON object to this component's scope
                 view: 'cards',
                 sortOrder: 'desc',
+                safeJsonStringify: (data) => JSON.stringify(data),
                 hideRead: true,
                 activeSpecialFilter: null,
                 searchQuery: '{search_value}',
+                get htmxVals() {{
+                    return this.safeJsonStringify({{'sort_order': this.sortOrder, 'hide_read': this.hideRead, 'filter_type': this.activeSpecialFilter, 'search_query': this.searchQuery, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}});
+                }},
                 init: function() {{
                     const savedTheme = localStorage.getItem('theme');
                     const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -269,14 +272,19 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     this.isOpen = true;
                 }},
 
-                openEdit: function(bookmarkData) {{
+                openEdit: function(bookmarkDataString) {{
                     this.isEditing = true;
+                    const bookmarkData = JSON.parse(bookmarkDataString);
                     this.bookmark = {{ ...bookmarkData, is_read: bookmarkData.is_read == 1 }};
                     this.isOpen = true;
                 }},
 
                 close: function() {{
                     this.isOpen = false;
+                }},
+
+                updateField: function(field, value) {{
+                    this.bookmark[field] = value;
                 }},
 
                 submit: async function() {{
@@ -392,7 +400,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                    hx-trigger="keyup changed delay:500ms, search"
                    hx-target="body" 
                    hx-swap="none"
-                   :hx-vals="JSON.stringify({{'sort_order': sortOrder, 'hide_read': hideRead, 'filter_type': activeSpecialFilter, 'search_query': searchQuery, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
+                   :hx-vals="htmxVals"
             >
             <button type="button" id="clearSearchBtn" class="clear-search-btn" title="{translations.get('tooltip_clear_search', 'Clear search')}" x-show="searchQuery" @click="searchQuery = '';" x-cloak>&times;</button>
         </div>
@@ -410,7 +418,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     hx-trigger="click"
                     hx-target="body"
                     hx-swap="none"
-                    :hx-vals="JSON.stringify({{'sort_order': sortOrder === 'desc' ? 'asc' : 'desc', 'search_query': searchQuery, 'hide_read': hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
+                    :hx-vals="safeJsonStringify({{'sort_order': sortOrder === 'desc' ? 'asc' : 'desc', 'search_query': searchQuery, 'hide_read': hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
             ></button>
             <button type="button" class="view-btn" id="viewToggleBtn" title="{translations.get('tooltip_change_view', 'Change view')}" x-on:click="toggleView()" x-text="view === 'cards' ? '{translations.get('compact_view', 'Compact View')}' : '{translations.get('card_view', 'Card View')}'"></button>
             <button type="button" class="view-btn" id="themeToggleBtn" title="{translations.get('tooltip_change_theme', 'Change theme')}" x-on:click="toggleTheme()" x-text="theme === 'dark' ? '{translations.get('light_mode', 'Light Mode')}' : '{translations.get('dark_mode', 'Dark Mode')}'"></button>
@@ -431,7 +439,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     hx-trigger="click"
                     hx-target="body"
                     hx-swap="none"
-                    :hx-vals="JSON.stringify({{'sort_order': sortOrder, 'search_query': searchQuery, 'hide_read': !hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
+                    :hx-vals="safeJsonStringify({{'sort_order': sortOrder, 'search_query': searchQuery, 'hide_read': !hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
             >{translations.get('hide_read', 'Hide Read')}</button>
             <a href="/api/export/csv" class="filter-btn" download="bookmarks.csv" target="_blank" title="{translations.get('tooltip_export_csv', 'Export...')}">{translations.get('export_csv', 'Export CSV')}</a>
             <a href="/logout" class="filter-btn" title="{translations.get('tooltip_logout', 'Logout...')}">{translations.get('logout', 'Logout')}</a>
@@ -474,11 +482,11 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                 </div>
                 <div class="modal-body">
                     <form @submit.prevent="submit">
-                        <input type="hidden" x-model="bookmark.id">
+                        <input type="hidden" :value="bookmark.id" @input="updateField('id', $event.target.value)">
                         <div class="form-group full-width-grid-column form-group-with-button">
                             <label for="edit-url">URL: *</label>
                             <div class="input-with-button">
-                                <input type="url" id="edit-url" required title="{translations.get('tooltip_modal_url', 'URL...')}" x-model="bookmark.url">
+                                <input type="url" id="edit-url" required title="{translations.get('tooltip_modal_url', 'URL...')}" :value="bookmark.url" @input="updateField('url', $event.target.value)">
                                 <button type="button" class="btn btn-icon" @click="scrape" :disabled="isLoading" title="{translations.get('tooltip_scrape', 'Scrape...')}">
                                     <span x-show="!isLoading">✨</span>
                                     <span x-show="isLoading">⏳</span>
@@ -487,26 +495,26 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                         </div>
                         <div class="form-group full-width-grid-column">
                             <label for="edit-title">{translations.get('modal_label_title', 'Title')}:</label>
-                            <input type="text" id="edit-title" title="{translations.get('tooltip_modal_title', 'Title...')}" x-model="bookmark.title">
+                            <input type="text" id="edit-title" title="{translations.get('tooltip_modal_title', 'Title...')}" :value="bookmark.title" @input="updateField('title', $event.target.value)">
                         </div>
                         <div class="form-group full-width-grid-column">
                             <label for="edit-image_url">{translations.get('modal_label_image_url', 'Image URL')}:</label>
-                            <input type="url" id="edit-image_url" title="{translations.get('tooltip_modal_image', 'Image URL...')}" x-model="bookmark.image_url">
+                            <input type="url" id="edit-image_url" title="{translations.get('tooltip_modal_image', 'Image URL...')}" :value="bookmark.image_url" @input="updateField('image_url', $event.target.value)">
                         </div>
                         <div class="form-group full-width-grid-column">
                             <label for="edit-description">{translations.get('modal_label_description', 'Description')}:</label>
-                            <textarea id="edit-description" rows="3" title="{translations.get('tooltip_modal_description', 'Description...')}" x-model="bookmark.description"></textarea>
+                            <textarea id="edit-description" rows="3" title="{translations.get('tooltip_modal_description', 'Description...')}" :value="bookmark.description" @input="updateField('description', $event.target.value)"></textarea>
                         </div>
                         <div class="form-group full-width-grid-column">
                             <label for="edit-comments_url">{translations.get('modal_label_hn_url', 'HackerNews URL')}:</label>
-                            <input type="url" id="edit-comments_url" title="{translations.get('tooltip_modal_hn_url', 'HN URL...')}" x-model="bookmark.comments_url">
+                            <input type="url" id="edit-comments_url" title="{translations.get('tooltip_modal_hn_url', 'HN URL...')}" :value="bookmark.comments_url" @input="updateField('comments_url', $event.target.value)">
                         </div>
                         <div class="form-group">
                             <label for="edit-telegram_user_id">{translations.get('modal_label_user_id', 'Telegram User ID')}:</label>
-                            <input type="number" id="edit-telegram_user_id" title="{translations.get('tooltip_modal_user_id', 'User ID...')}" x-model="bookmark.telegram_user_id">
+                            <input type="number" id="edit-telegram_user_id" title="{translations.get('tooltip_modal_user_id', 'User ID...')}" :value="bookmark.telegram_user_id" @input="updateField('telegram_user_id', $event.target.value)">
                         </div>
                         <div class="form-group form-group-checkbox">
-                            <label><input type="checkbox" id="edit-is_read" title="{translations.get('tooltip_modal_is_read', 'Already read...')}" x-model="bookmark.is_read"> {translations.get('modal_label_is_read', 'Already read')}</label>
+                            <label><input type="checkbox" id="edit-is_read" title="{translations.get('tooltip_modal_is_read', 'Already read...')}" :checked="bookmark.is_read" @change="updateField('is_read', $event.target.checked)"> {translations.get('modal_label_is_read', 'Already read')}</label>
                         </div>
                     </form>
                 </div>

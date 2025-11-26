@@ -24,10 +24,11 @@ from werkzeug.security import check_password_hash
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
+ 
 from shared.utils import extract_domain, get_article_metadata
 from shared.database import get_db_path
 from .htmldata import get_html, render_bookmarks, render_bookmarks_compact, get_login_page
-__version__ = "2.0.2"
+__version__ = "2.0.4"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -566,7 +567,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                  hx-trigger="revealed"
                  hx-swap="outerHTML"
                  hx-indicator="#loadingIndicator"
-                 :hx-vals="JSON.stringify({{'offset': {next_offset}, 'limit': {limit}, 'sort_order': '{sort_order}', 'search_query': '{search_query or ''}', 'hide_read': {str(hide_read).lower()}, 'filter_type': '{filter_type or ''}'}})"
+                 :hx-vals="safeJsonStringify({{'offset': {next_offset}, 'limit': {limit}, 'sort_order': '{sort_order}', 'search_query': '{search_query or ''}', 'hide_read': {str(hide_read).lower()}, 'filter_type': '{filter_type or ''}'}})"
                  class="load-more-trigger">
                 {translations.get('loading', 'Loading more bookmarks...')}
             </div>
@@ -618,7 +619,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                  hx-trigger="revealed"
                  hx-swap="outerHTML"
                  hx-indicator="#loadingIndicator"
-                 :hx-vals="JSON.stringify({{'offset': {next_offset}, 'limit': {limit}, 'sort_order': '{sort_order}', 'search_query': '{search_query or ''}', 'hide_read': {str(hide_read).lower()}, 'filter_type': '{filter_type or ''}'}})"
+                 :hx-vals="safeJsonStringify({{'offset': {next_offset}, 'limit': {limit}, 'sort_order': '{sort_order}', 'search_query': '{search_query or ''}', 'hide_read': {str(hide_read).lower()}, 'filter_type': '{filter_type or ''}'}})"
                  class="load-more-trigger">
                 {translations.get('loading', 'Loading more bookmarks...')}
             </div>

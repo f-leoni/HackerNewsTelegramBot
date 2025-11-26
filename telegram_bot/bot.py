@@ -8,10 +8,6 @@ import sqlite3
 from pyrogram import Client, filters
 from datetime import datetime
 from urllib.parse import urlparse
-
-# Add the project root to the path to import the shared library
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(SCRIPT_DIR))
 from shared.database import init_database, get_db_path
 from shared.utils import get_article_metadata
 import logging
@@ -193,7 +189,7 @@ class BookmarkBot:
         db_path = get_db_path()
         conn = None
         try:
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path, uri=db_path.startswith('file:'))
             cursor = conn.cursor()
             from_user_id = getattr(message.from_user, "id", None)
             comments_url = comments_url_override if comments_url_override is not None else self.get_hn_comments_url(url)
