@@ -68,5 +68,6 @@
     "toast_url_required_for_scrape": "Please enter a URL before scraping.",
     "toast_protocol_added": "Protocol https:// automatically added.",
     "toast_metadata_scraped_success": "Metadata scraped successfully!",
-    "toast_error_scraping_metadata": "Error during metadata scraping."
+    "toast_error_scraping_metadata": "Error during metadata scraping.",
+    "toast_error_url_exists": "This URL already exists in another bookmark."
 }

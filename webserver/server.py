@@ -28,7 +28,7 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from shared.utils import extract_domain, get_article_metadata
 from shared.database import get_db_path
 from .htmldata import get_html, render_bookmarks, render_bookmarks_compact, get_login_page
-__version__ = "2.0.4"
+__version__ = "2.0.5"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -711,6 +711,41 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         except sqlite3.Error as e:
             self._send_error_response(500, str(e))
 
+    def _get_current_bookmark_data(self, cursor, bookmark_id, user_id):
+        """Helper to fetch the current state of a bookmark."""
+        cursor.execute("""
+            SELECT url, title, description, image_url, comments_url, telegram_user_id, telegram_message_id, COALESCE(is_read, 0) as is_read
+            FROM bookmarks
+            WHERE id = ? AND user_id = ?
+        """, (bookmark_id, user_id))
+        
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        # Map columns to a dictionary
+        columns = ['url', 'title', 'description', 'image_url', 'comments_url', 'telegram_user_id', 'telegram_message_id', 'is_read']
+        return dict(zip(columns, row))
+
+    def _normalize_field(self, value):
+        """Normalize values for comparison to avoid false positives on changes."""
+        if value is None:
+            return ""
+        if isinstance(value, bool):
+            return 1 if value else 0
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    def _compare_and_get_changed_fields(self, current_data, new_data):
+        """Compares current and new data, returning only changed fields."""
+        changed_fields = {}
+        for key, new_value in new_data.items():
+            current_value = current_data.get(key)
+            if self._normalize_field(new_value) != self._normalize_field(current_value):
+                changed_fields[key] = new_value
+        return changed_fields
+
     def update_bookmark(self, bookmark_id):
         """
         Updates the fields of an existing bookmark.
@@ -736,26 +771,53 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode('utf-8'))
 
-            fields = {} # noqa
+            # Filter only allowed fields from the incoming request
+            new_data = {}
             allowed = ['url', 'title', 'description', 'image_url', 'comments_url', 'telegram_user_id', 'telegram_message_id', 'is_read']
             for k in allowed:
                 if k in data:
-                    fields[k] = data[k]
+                    new_data[k] = data[k]
 
-            if not fields:
-                self._send_error_response(400, "No valid fields to update")
-                return
+            # Handle checkbox value from htmx form submission
+            if 'is_read' in new_data:
+                new_data['is_read'] = 1 if new_data['is_read'] in [True, 'true', 1] else 0
 
-            # If url changed, update domain automatically
-            if 'url' in fields:
-                fields['domain'] = extract_domain(fields['url'])
+            # If the URL field is present but empty, remove it from the update
+            if 'url' in new_data and not (new_data['url'] or '').strip():
+                del new_data['url']
 
-            set_clause = ', '.join([f"{k} = ?" for k in fields.keys()])
-            params = list(fields.values())
-            params.append(bookmark_id)
+            current_user_id = self.get_current_user()
 
             with db_connection() as cursor:
-                cursor.execute(f"UPDATE bookmarks SET {set_clause} WHERE id = ? AND user_id = ?", params + [self.get_current_user()])
+                # 1. Get the current state of the bookmark
+                current_data = self._get_current_bookmark_data(cursor, bookmark_id, current_user_id)
+                if not current_data:
+                    self._send_error_response(404, "Bookmark not found")
+                    return
+
+                # 2. Compare and find what actually changed
+                fields_to_update = self._compare_and_get_changed_fields(current_data, new_data)
+
+                # If nothing changed, we don't need to do anything.
+                # We still proceed to fetch and return the bookmark to keep the UI consistent.
+                if fields_to_update:
+                    # If url is being changed, update domain automatically
+                    if 'url' in fields_to_update:
+                        fields_to_update['domain'] = extract_domain(fields_to_update['url'])
+
+                    # If URL is being changed, check for conflicts with OTHER bookmarks
+                    if 'url' in fields_to_update:
+                        cursor.execute(
+                            "SELECT id FROM bookmarks WHERE url = ? AND user_id = ? AND id != ?",
+                            (fields_to_update['url'], current_user_id, bookmark_id)
+                        )
+                        if cursor.fetchone():
+                            raise sqlite3.IntegrityError("URL already exists for another bookmark.")
+
+                    # 3. Build and execute the UPDATE query only for changed fields
+                    set_clause = ', '.join([f"{k} = ?" for k in fields_to_update.keys()])
+                    params = list(fields_to_update.values())
+                    cursor.execute(f"UPDATE bookmarks SET {set_clause} WHERE id = ? AND user_id = ?", params + [bookmark_id, current_user_id])
 
                 # After the update, retrieve the updated bookmark to return it
                 cursor.execute("""
@@ -771,10 +833,34 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 self._send_error_response(404, "Bookmark not found after update")
                 return
 
-            updated_bookmark = dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], updated_bookmark_tuple))
-            self._send_json_response(200, updated_bookmark)
-        except sqlite3.IntegrityError:
-            self._send_error_response(409, "URL already exists")
+            # Check if the request is from htmx
+            is_htmx_request = self.headers.get('HX-Request') == 'true'
+
+            if is_htmx_request:
+                # If it's an htmx request, return the rendered HTML for the updated card
+                lang_code = self.get_user_language()
+                translations = load_translations(lang_code)
+                
+                # The render functions expect a list of tuples
+                rendered_card = render_bookmarks([updated_bookmark_tuple], translations)
+                rendered_compact = render_bookmarks_compact([updated_bookmark_tuple], translations)
+
+                # Respond with Out-of-Band swaps for both views
+                html_response = f"""
+                {rendered_card}
+                {rendered_compact}
+                """
+                self.send_response(200)
+                self.send_header('HX-Trigger', 'bookmark-updated') # Trigger a client-side event
+                self._send_html_response(200, html_response)
+            else:
+                # For non-htmx requests, return JSON as before
+                updated_bookmark = dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], updated_bookmark_tuple))
+                self._send_json_response(200, updated_bookmark)
+        except sqlite3.IntegrityError as e:
+            # Provide a more specific error message if possible
+            error_message = str(e) if "already exists" in str(e) else "URL already exists"
+            self._send_error_response(409, error_message)
         except Exception as e:
             logger.error(f"Error updating bookmark {bookmark_id}: {e}")
             self._send_error_response(500, "An internal error occurred")
@@ -824,11 +910,30 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         Handled errors: 400 (bad request), 409 (duplicate URL), 500 (other)
         """
         try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length) if content_length > 0 else b''
+            content_type = self.headers.get('Content-Type', '')
 
-            url = data.get('url', '').strip()
+            data = None
+            # Try JSON first (expected when using htmx json-enc)
+            if post_data:
+                try:
+                    data = json.loads(post_data.decode('utf-8'))
+                except json.JSONDecodeError:
+                    # Fallback: try parsing form-encoded body
+                    try:
+                        form = parse_qs(post_data.decode('utf-8'))
+                        # flatten lists to single values
+                        data = {k: (v[0] if isinstance(v, list) and len(v) > 0 else v) for k, v in form.items()}
+                    except Exception:
+                        data = None
+
+            if not data:
+                logger.warning(f"add_bookmark: empty or invalid payload. Content-Type: {content_type}; Body: {post_data!r}")
+                self._send_error_response(400, "Invalid or empty request body")
+                return
+
+            url = (data.get('url') or '').strip()
             if not url:
                 raise ValueError("URL is required")
 
@@ -843,9 +948,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                     self._send_error_response(409, "URL already exists")
                     return
 
+                is_read_value = 1 if data.get('is_read') in [True, 'true', '1', 1] else 0
+
                 cursor.execute("""
-                    INSERT INTO bookmarks (user_id, url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO bookmarks (user_id, url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url, is_read)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     user_id,
                     url,
@@ -855,7 +962,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                     domain,
                     data.get('telegram_user_id') if data.get('telegram_user_id') else None,
                     data.get('telegram_message_id') if data.get('telegram_message_id') else None,
-                    data.get('comments_url')
+                    data.get('comments_url'),
+                    is_read_value
                 ))
 
                 new_bookmark_id = cursor.lastrowid

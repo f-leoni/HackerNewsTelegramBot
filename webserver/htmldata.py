@@ -58,23 +58,28 @@ def render_bookmark_card(bookmark, translations):
         'id': id, 'url': url, 'title': title, 'description': description,
         'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
     }, ensure_ascii=False)
-    bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
+    bookmark_json_html = bookmark_data_json.replace("\\", "\\\\").replace("'", "&#39;").replace('"', '&quot;')
 
     class_attr = f"bookmark-card {'read' if is_read else ''}".strip()
     read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
     read_button_icon = ICON_READ if is_read else ICON_UNREAD
 
     return f"""
-    <div class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}">
+    <div id="bookmark-card-{id}" class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}" hx-swap-oob="outerHTML">
         <div class="bookmark-main">
             <div class="bookmark-visuals">
                 <div class="image-placeholder">
                     <img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image">
                 </div>
                 <div class="bookmark-actions">
-                    <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>
+                    <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>                    
                     <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
-                    <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', $unescapeHtml('{bookmark_json_html}'))">{ICON_EDIT}</button>
+                    <button 
+                        class="icon-btn edit"
+                        title="{translations.get('tooltip_edit', 'Edit')}"
+                        data-bookmark-json="{bookmark_json_html}"
+                        @click="$dispatch('open-edit-modal', $el.dataset.bookmarkJson)"
+                    >{ICON_EDIT}</button>
                     <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
                 </div>
             </div>
@@ -101,14 +106,14 @@ def render_bookmark_compact_item(bookmark, translations):
     bookmark_data_json = json.dumps({
         'id': id, 'url': url, 'title': title, 'description': _, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
     }, ensure_ascii=False)
-    bookmark_json_html = bookmark_data_json.replace("'", "&#39;").replace('"', '&quot;')
+    bookmark_json_html = bookmark_data_json.replace("\\", "\\\\").replace("'", "&#39;").replace('"', '&quot;')
 
     class_attr = f"compact-item {'read' if is_read else ''}".strip()
     read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
     read_button_icon = ICON_READ if is_read else ICON_UNREAD
 
     return f"""
-    <div class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}">
+    <div class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}" id="bookmark-compact-{id}" hx-swap-oob="outerHTML">
         <img src="{escape_html(image_url)}" alt="" class="compact-image">
         <div class="image-placeholder" style="display:none;">🔗</div>
         <div class="compact-content">
@@ -121,7 +126,12 @@ def render_bookmark_compact_item(bookmark, translations):
         </div>
         <div class="bookmark-actions">
             <button class="icon-btn read" data-id="{id}" title="{read_button_title}">{read_button_icon}</button>
-            <button class="icon-btn edit" title="{translations.get('tooltip_edit', 'Edit')}" @click="$dispatch('open-edit-modal', $unescapeHtml('{bookmark_json_html}'))">{ICON_EDIT}</button>
+            <button 
+                class="icon-btn edit"
+                title="{translations.get('tooltip_edit', 'Edit')}"
+                data-bookmark-json="{bookmark_json_html}"
+                @click="$dispatch('open-edit-modal', $el.dataset.bookmarkJson)"
+            >{ICON_EDIT}</button>
             <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
         </div>
     </div>
@@ -185,12 +195,11 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
     <script nonce="{self.nonce}">
         // Define Alpine.js components. This script runs after Alpine.js is loaded.
         document.addEventListener('alpine:init', () => {{
-            // Register a global magic property to unescape HTML entities
-            Alpine.magic('unescapeHtml', () => {{
-                return function(html) {{
-                    const doc = new DOMParser().parseFromString(html, 'text/html');
-                    return doc.documentElement.textContent;
-                }}
+            // Register a global magic property to unescape HTML entities.
+            // The callback receives the component's root element, which we don't need here.
+            Alpine.magic('unescapeHtml', () => (html) => {{
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                return doc.documentElement.textContent;
             }});
 
             Alpine.data('viewControls', () => ({{
@@ -265,6 +274,17 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                 isEditing: false,
                 isLoading: false,
                 bookmark: {{}},
+                
+                init: function() {{
+                    // CSP-compliant way to handle htmx events.
+                    // We listen for events on the form element itself.
+                    this.$refs.form.addEventListener('htmx:afterRequest', (event) => {{
+                        this.handleSuccess(event);
+                    }});
+                    this.$refs.form.addEventListener('htmx:error', (event) => {{
+                        this.handleError(event);
+                    }});
+                }},
 
                 openAdd: function() {{
                     this.isEditing = false;
@@ -287,62 +307,73 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     this.bookmark[field] = value;
                 }},
 
-                submit: async function() {{
-                    const isAdding = !this.bookmark.id;
-                    const method = isAdding ? 'POST' : 'PUT';
-                    const url = isAdding ? '/api/bookmarks' : `/api/bookmarks/${{this.bookmark.id}}`;
-
-                    const dataToSend = {{ ...this.bookmark }};
-                    Object.keys(dataToSend).forEach(key => {{
-                        if (dataToSend[key] === '' || dataToSend[key] === null) delete dataToSend[key];
-                    }});
-                    dataToSend.is_read = dataToSend.is_read ? 1 : 0;
-                    if (isAdding && !dataToSend.is_read) delete dataToSend.is_read;
-                    delete dataToSend.id;
-
-                    try {{
-                        const response = await fetch(url, {{
-                            method: method,
-                            headers: {{ 'Content-Type': 'application/json' }},
-                            body: JSON.stringify(dataToSend)
-                        }});
-                        if (!response.ok) throw new Error((await response.json()).error || 'Unknown error');
-
-                        const updatedBookmark = await response.json();
-
-                        if (isAdding) {{
-                            // Add new bookmark to the top of the lists
-                            const grid = document.getElementById('bookmarksGrid');
-                            grid.insertAdjacentHTML('afterbegin', renderBookmarkCard(updatedBookmark));
-                            const newCard = grid.firstElementChild;
-                            newCard.classList.add('newly-added');
-                            setTimeout(() => newCard.classList.remove('newly-added'), 2000);
-
-                            const compactList = document.getElementById('bookmarksCompact');
-                            compactList.insertAdjacentHTML('afterbegin', renderBookmarkCompactItem(updatedBookmark));
-                            const newCompactItem = compactList.firstElementChild;
-                            newCompactItem.classList.add('newly-added');
-                            setTimeout(() => newCompactItem.classList.remove('newly-added'), 2000);
-                            
-                            // Update counts
-                            const visibleCountEl = document.getElementById('visibleCount');
-                            visibleCountEl.textContent = parseInt(visibleCountEl.textContent, 10) + 1;
-                            const totalCountEl = document.getElementById('totalCount');
-                            totalCountEl.textContent = parseInt(totalCountEl.textContent, 10) + 1;
-                        }} else {{
-                            // Update existing bookmark in place
-                            const oldCard = document.querySelector(`.bookmark-card[data-id='${{updatedBookmark.id}}']`);
-                            if (oldCard) oldCard.outerHTML = renderBookmarkCard(updatedBookmark);
-                            
-                            const oldCompactItem = document.querySelector(`.compact-item[data-id='${{updatedBookmark.id}}']`);
-                            if (oldCompactItem) oldCompactItem.outerHTML = renderBookmarkCompactItem(updatedBookmark);
+                submit: function() {{
+                    // Use the standard fetch API for full control over the request.
+                    const method = this.isEditing ? 'PUT' : 'POST';
+                    const url = this.isEditing ? `/api/bookmarks/${{this.bookmark.id}}` : '/api/bookmarks';
+                    
+                    this.isLoading = true;
+                    fetch(url, {{
+                        method: method,
+                        headers: {{ 'Content-Type': 'application/json', 'HX-Request': 'true' }},
+                        body: JSON.stringify(this.bookmark)
+                    }})
+                    .then(response => {{
+                        if (!response.ok) {{
+                            return response.text().then(text => {{ throw new Error(text || 'Server error') }});
                         }}
+                        return response.text();
+                    }})
+                    .then(html => {{
+                        // The htmx functions for programmatic swapping (swap, settle, oobSwap) are not public API.
+                        // The most robust solution is to manually parse the response and apply the OOB swaps.
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = html;
+                        
+                        // Find all elements in the response marked for OOB swap
+                        const oobElements = tempDiv.querySelectorAll('[hx-swap-oob]');
+                        oobElements.forEach(oobEl => {{
+                            const target = document.getElementById(oobEl.id);
+                            if (target) target.replaceWith(oobEl);
+                        }});
 
-                        showToast(isAdding ? (window.TRANSLATIONS.toast_bookmark_added_success || "Bookmark added successfully!") : (window.TRANSLATIONS.toast_bookmark_updated_success || "Bookmark updated successfully!"));
-                        this.close();
-                    }} catch (error) {{
-                        showToast(`${{window.TRANSLATIONS.toast_error_prefix || "Error: "}}${{error.message}}`, true);
+                        this.handleSuccess({{ detail: {{ successful: true }} }});
+                    }})
+                    .catch(error => this.handleError({{ detail: {{ xhr: {{ responseText: error.message }} }} }}))
+                    .finally(() => this.isLoading = false);
+                }},
+
+                handleSuccess: function(event) {{
+                    // This is called by htmx's hx-on::after-request
+                    if (!event.detail.successful) return; // Only proceed on success
+                    this.close();
+                    showToast(this.isEditing 
+                        ? (window.TRANSLATIONS.toast_bookmark_updated_success || "Bookmark updated successfully!")
+                        : (window.TRANSLATIONS.toast_bookmark_added_success || "Bookmark added successfully!")
+                    );
+                    // If adding, we might need to refresh the list to see the new item.
+                    // A simple way is to re-trigger the search.
+                    if (!this.isEditing) {{
+                        htmx.trigger('#searchBox', 'search');
                     }}
+                }},
+
+                handleError: function(event) {{
+                    // This is called by the htmx:error event listener.
+                    // We make it robust by checking for the existence of properties.
+                    let errorMsg = "Unknown server error";
+                    if (event.detail && event.detail.xhr && event.detail.xhr.responseText) {{
+                        errorMsg = event.detail.xhr.responseText;
+                        try {{
+                            const errorJson = JSON.parse(errorMsg);
+                            if (errorJson.error === "URL already exists for another bookmark.") {{
+                                errorMsg = window.TRANSLATIONS.toast_error_url_exists || errorJson.error;
+                            }}
+                        }} catch (e) {{
+                            // Not a JSON error, use the raw text
+                        }}
+                    }}
+                    showToast(`${{window.TRANSLATIONS.toast_error_prefix || 'Error: '}}${{errorMsg}}`, true);
                 }},
 
                 scrape: async function() {{
@@ -481,12 +512,17 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     <span class="close-btn" @click="close" title="{translations.get('tooltip_close_modal', 'Close')}">&times;</span>
                 </div>
                 <div class="modal-body">
-                    <form @submit.prevent="submit">
-                        <input type="hidden" :value="bookmark.id" @input="updateField('id', $event.target.value)">
+                    <form 
+                        x-ref="form"
+                        hx-ext="json-enc"
+                    >
+                        <template x-if="isEditing">
+                            <input type="hidden" name="id" :value="bookmark.id">
+                        </template>
                         <div class="form-group full-width-grid-column form-group-with-button">
                             <label for="edit-url">URL: *</label>
                             <div class="input-with-button">
-                                <input type="url" id="edit-url" required title="{translations.get('tooltip_modal_url', 'URL...')}" :value="bookmark.url" @input="updateField('url', $event.target.value)">
+                                <input type="url" id="edit-url" name="url" required title="{translations.get('tooltip_modal_url', 'URL...')}" :value="bookmark.url" @input="updateField('url', $event.target.value)">
                                 <button type="button" class="btn btn-icon" @click="scrape" :disabled="isLoading" title="{translations.get('tooltip_scrape', 'Scrape...')}">
                                     <span x-show="!isLoading">✨</span>
                                     <span x-show="isLoading">⏳</span>
@@ -495,31 +531,38 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                         </div>
                         <div class="form-group full-width-grid-column">
                             <label for="edit-title">{translations.get('modal_label_title', 'Title')}:</label>
-                            <input type="text" id="edit-title" title="{translations.get('tooltip_modal_title', 'Title...')}" :value="bookmark.title" @input="updateField('title', $event.target.value)">
+                            <input type="text" id="edit-title" name="title" title="{translations.get('tooltip_modal_title', 'Title...')}" :value="bookmark.title" @input="updateField('title', $event.target.value)">
                         </div>
                         <div class="form-group full-width-grid-column">
                             <label for="edit-image_url">{translations.get('modal_label_image_url', 'Image URL')}:</label>
-                            <input type="url" id="edit-image_url" title="{translations.get('tooltip_modal_image', 'Image URL...')}" :value="bookmark.image_url" @input="updateField('image_url', $event.target.value)">
+                            <input type="url" id="edit-image_url" name="image_url" title="{translations.get('tooltip_modal_image', 'Image URL...')}" :value="bookmark.image_url" @input="updateField('image_url', $event.target.value)">
                         </div>
                         <div class="form-group full-width-grid-column">
                             <label for="edit-description">{translations.get('modal_label_description', 'Description')}:</label>
-                            <textarea id="edit-description" rows="3" title="{translations.get('tooltip_modal_description', 'Description...')}" :value="bookmark.description" @input="updateField('description', $event.target.value)"></textarea>
+                            <textarea id="edit-description" name="description" rows="3" title="{translations.get('tooltip_modal_description', 'Description...')}" x-text="bookmark.description" @input="updateField('description', $event.target.value)"></textarea>
                         </div>
                         <div class="form-group full-width-grid-column">
                             <label for="edit-comments_url">{translations.get('modal_label_hn_url', 'HackerNews URL')}:</label>
-                            <input type="url" id="edit-comments_url" title="{translations.get('tooltip_modal_hn_url', 'HN URL...')}" :value="bookmark.comments_url" @input="updateField('comments_url', $event.target.value)">
+                            <input type="url" id="edit-comments_url" name="comments_url" title="{translations.get('tooltip_modal_hn_url', 'HN URL...')}" :value="bookmark.comments_url" @input="updateField('comments_url', $event.target.value)">
                         </div>
                         <div class="form-group">
                             <label for="edit-telegram_user_id">{translations.get('modal_label_user_id', 'Telegram User ID')}:</label>
-                            <input type="number" id="edit-telegram_user_id" title="{translations.get('tooltip_modal_user_id', 'User ID...')}" :value="bookmark.telegram_user_id" @input="updateField('telegram_user_id', $event.target.value)">
+                            <input type="number" id="edit-telegram_user_id" name="telegram_user_id" title="{translations.get('tooltip_modal_user_id', 'User ID...')}" :value="bookmark.telegram_user_id" @input="updateField('telegram_user_id', $event.target.value)">
                         </div>
                         <div class="form-group form-group-checkbox">
-                            <label><input type="checkbox" id="edit-is_read" title="{translations.get('tooltip_modal_is_read', 'Already read...')}" :checked="bookmark.is_read" @change="updateField('is_read', $event.target.checked)"> {translations.get('modal_label_is_read', 'Already read')}</label>
+                            <label><input type="checkbox" id="edit-is_read" name="is_read" value="true" title="{translations.get('tooltip_modal_is_read', 'Already read...')}" :checked="bookmark.is_read" @change="updateField('is_read', $event.target.checked)"> {translations.get('modal_label_is_read', 'Already read')}</label>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-primary" @click="$root.querySelector('form').requestSubmit()" title="{translations.get('tooltip_save_changes', 'Save...')}">{translations.get('save_changes', 'Save Changes')}</button>
+                    <button 
+                        type="button" 
+                        class="btn btn-primary" 
+                        title="{translations.get('tooltip_save_changes', 'Save...')}"
+                        @click="submit"
+                    >
+                        {translations.get('save_changes', 'Save Changes')}
+                    </button>
                     <button type="button" class="btn btn-secondary" @click="close" title="{translations.get('tooltip_discard_changes', 'Cancel...')}">{translations.get('cancel', 'Cancel')}</button>
                 </div>
             </div>
