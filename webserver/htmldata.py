@@ -539,7 +539,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                         </div>
                         <div class="form-group full-width-grid-column">
                             <label for="edit-description">{translations.get('modal_label_description', 'Description')}:</label>
-                            <textarea id="edit-description" name="description" rows="3" title="{translations.get('tooltip_modal_description', 'Description...')}" x-text="bookmark.description" @input="updateField('description', $event.target.value)"></textarea>
+                            <textarea id="edit-description" name="description" rows="3" title="{translations.get('tooltip_modal_description', 'Description...')}" :value="bookmark.description" @input="updateField('description', $event.target.value)"></textarea>
                         </div>
                         <div class="form-group full-width-grid-column">
                             <label for="edit-comments_url">{translations.get('modal_label_hn_url', 'HackerNews URL')}:</label>
@@ -547,7 +547,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                         </div>
                         <div class="form-group">
                             <label for="edit-telegram_user_id">{translations.get('modal_label_user_id', 'Telegram User ID')}:</label>
-                            <input type="number" id="edit-telegram_user_id" name="telegram_user_id" title="{translations.get('tooltip_modal_user_id', 'User ID...')}" :value="bookmark.telegram_user_id" @input="updateField('telegram_user_id', $event.target.value)">
+                            <input type="number" id="edit-telegram_user_id" name="telegram_user_id" title="{translations.get('tooltip_modal_user_id', 'User ID...')}" :value="bookmark.telegram_user_id" @input="updateField('telegram_user_id', $event.target.valueAsNumber)">
                         </div>
                         <div class="form-group form-group-checkbox">
                             <label><input type="checkbox" id="edit-is_read" name="is_read" value="true" title="{translations.get('tooltip_modal_is_read', 'Already read...')}" :checked="bookmark.is_read" @change="updateField('is_read', $event.target.checked)"> {translations.get('modal_label_is_read', 'Already read')}</label>
