@@ -2,8 +2,8 @@ services:
   # Telegram bot service
   bot:
     build:
-      context: .
-      dockerfile: Dockerfile # Use the Dockerfile in the root
+      context: . # Il context è ancora utile per i build locali
+    image: ghcr.io/f-leoni/hackernews-bot:${BOT_IMAGE_TAG:-latest}
     container_name: hackernews-bot
     # Always restart the container if it stops
     restart: always
@@ -22,10 +22,8 @@ services:
   # Webserver service
   webserver:
     build:
-      # The context is the project root, so it can see both 'webserver' and 'shared'
       context: .
-      # Specify the path to the Dockerfile to use
-      dockerfile: ./webserver/Dockerfile
+    image: ghcr.io/f-leoni/hackernews-webserver:${WEBSERVER_IMAGE_TAG:-latest}
     container_name: hackernews-webserver
     restart: always
     # Add this line to load variables for the webserver

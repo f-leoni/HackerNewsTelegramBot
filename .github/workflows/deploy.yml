@@ -1,0 +1,98 @@
+# .github/workflows/deploy.yml
+
+name: Build and Deploy to Production
+
+# Triggera il workflow ad ogni push sul branch 'main'
+on:
+  push:
+    branches:
+      - main
+
+# Definisce le variabili d'ambiente per tutto il workflow
+env:
+  # Sostituisci 'tuo-username-github' con il tuo vero username
+  # e 'hackernews-telegram-bot' con il nome del tuo repository.
+  # Questo è per GitHub Container Registry (GHCR).
+  REGISTRY: ghcr.io
+  IMAGE_NAME_WEBSERVER: ${{ github.repository_owner }}/hackernews-webserver
+  IMAGE_NAME_BOT: ${{ github.repository_owner }}/hackernews-bot
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # Necessario per pushare su GHCR
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }} # Token generato automaticamente da Actions
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WEBSERVER }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BOT }}
+          tags: |
+            type=sha,prefix=,format=short # Usa l'hash breve del commit come tag
+
+      - name: Build and push Webserver image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./webserver/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WEBSERVER }}:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Bot image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BOT }}:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to remote server via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Naviga nella cartella del progetto sul server
+            cd /home/zitzu/progetti/HackerNewsTelegramBot 
+            
+            # Esporta le variabili d'ambiente con i nuovi tag delle immagini
+            export WEBSERVER_IMAGE_TAG=${{ steps.meta.outputs.version }}
+            export BOT_IMAGE_TAG=${{ steps.meta.outputs.version }}
+            
+            # Esegui il login a GHCR sul server remoto
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Scarica le nuove immagini
+            docker-compose pull
+            
+            # Riavvia i servizi con le nuove immagini
+            docker-compose up -d
+            
+            # Pulisci le vecchie immagini non utilizzate per liberare spazio
+            docker image prune -af
+
