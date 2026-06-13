@@ -49,7 +49,7 @@ function renderBookmarkCard(bookmark) {
     const bookmarkJson = JSON.stringify(bookmark).replace(/'/g, "&#39;").replace(/"/g, '&quot;');
 
     return `
-    <div class="bookmark-card ${isRead ? 'read' : ''}" data-id="${bookmark.id}" data-is-read="${isRead ? 1 : 0}">
+    <div class="bookmark-card ${isRead ? 'read' : ''}" data-id="${bookmark.id}" data-is-read="${isRead ? 1 : 0}" data-bookmark-json='${bookmarkJson}'>
         <div class="bookmark-content">
             <h3 class="bookmark-title"><a href="${bookmark.url}" target="_blank">${bookmark.title || 'Untitled'}</a></h3>
             <span class="bookmark-domain">${bookmark.domain}</span>
@@ -93,7 +93,7 @@ function renderBookmarkCompactItem(bookmark) {
     const bookmarkJson = JSON.stringify(bookmark).replace(/'/g, "&#39;").replace(/"/g, '&quot;');
 
     return `
-    <div class="compact-item ${isRead ? 'read' : ''}" data-id="${bookmark.id}" data-is-read="${isRead ? 1 : 0}">
+    <div class="compact-item ${isRead ? 'read' : ''}" data-id="${bookmark.id}" data-is-read="${isRead ? 1 : 0}" data-bookmark-json='${bookmarkJson}'>
         <img src="${bookmark.image_url}" alt="" class="compact-image">
         <div class="image-placeholder" style="display:none;">🔗</div>
         <div class="compact-content">
@@ -176,5 +176,21 @@ document.addEventListener('click', function(event) {
             }
         })
         .catch(error => showToast(error.message, true));
+    }
+});
+
+// Event delegation for clicking tag badges and opening the edit modal
+document.addEventListener('click', function(event) {
+    const tag = event.target.closest('.tag');
+    if (!tag) return;
+
+    const container = tag.closest('[data-bookmark-json]');
+    if (!container) return;
+
+    try {
+        const bookmark = JSON.parse(container.dataset.bookmarkJson);
+        document.dispatchEvent(new CustomEvent('open-edit-modal', { detail: JSON.stringify(bookmark) }));
+    } catch (error) {
+        showToast('Unable to open bookmark editor.', true);
     }
 });

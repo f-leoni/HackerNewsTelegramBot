@@ -16,7 +16,8 @@ from webserver.htmldata import (
 @pytest.fixture
 def sample_bookmark():
     """A sample bookmark tuple for testing."""
-    # Corresponds to: id, url, title, description, image_url, domain, saved_at, _, _, comments_url, is_read
+    # Corresponds to: id, url, title, description, image_url, domain, saved_at,
+    #                 telegram_user_id, telegram_message_id, comments_url, tags, is_read
     return (
         1,
         "https://example.com",
@@ -28,6 +29,7 @@ def sample_bookmark():
         None,
         None,
         None,
+        None,  # tags
         0  # Not read
     )
 

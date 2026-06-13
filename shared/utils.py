@@ -5,6 +5,9 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import logging
+import re
+import json
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -106,3 +109,40 @@ def get_article_metadata(url):
             "image_url": "",
             "domain": extract_domain(url),
         }
+
+
+def generate_tags(text, n=3):
+    """Generate up to `n` keyword-like tags from `text` using a simple frequency-based approach.
+
+    This is a lightweight fallback extractor (no external models). It lowercases,
+    splits on non-word chars, removes short tokens and a small stopword list,
+    and returns the top `n` tokens.
+    """
+    if not text:
+        return []
+
+    # Small bilingual stopword list (English + Italian common words)
+    stopwords = {
+        'the','and','for','with','that','this','from','are','was','will','have','has','not','but','you','your',
+        'per','una','un','il','la','le','di','e','che','da','in','su','con','del','della'
+    }
+
+    tokens = [t.lower() for t in re.findall(r"\w+", text, flags=re.UNICODE) if len(t) > 2]
+    tokens = [t for t in tokens if t not in stopwords and not t.isdigit()]
+    if not tokens:
+        return []
+
+    counts = Counter(tokens)
+    most_common = [t for t, _ in counts.most_common(n*3)]  # take a few more to dedupe
+
+    # Normalize tags: remove duplicates preserving order
+    seen = set()
+    tags = []
+    for t in most_common:
+        if t in seen: continue
+        seen.add(t)
+        tags.append(t)
+        if len(tags) >= n:
+            break
+
+    return tags

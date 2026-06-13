@@ -1,1 +1,5 @@
-werkzeug
+# Web Security - password hashing for login authentication
+werkzeug>=2.3.0
+
+# HTTP requests - for fetching web content and metadata
+requests>=2.31.0

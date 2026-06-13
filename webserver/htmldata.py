@@ -48,7 +48,7 @@ ICON_HN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="c
 
 def render_bookmark_card(bookmark, translations):
     """Renders a single bookmark as an HTML card."""
-    (id, url, title, description, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
+    (id, url, title, description, image_url, domain, saved_at, telegram_user_id, telegram_message_id, comments_url, tags, is_read) = bookmark
     
     def escape_html(text):
         if text is None: return ""  # noqa: E701
@@ -56,7 +56,7 @@ def render_bookmark_card(bookmark, translations):
 
     bookmark_data_json = json.dumps({
         'id': id, 'url': url, 'title': title, 'description': description,
-        'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
+        'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read, 'tags': (json.loads(tags) if isinstance(tags, str) and tags else (tags or []))
     }, ensure_ascii=False)
     bookmark_json_html = bookmark_data_json.replace("\\", "\\\\").replace("'", "&#39;").replace('"', '&quot;')
 
@@ -65,11 +65,11 @@ def render_bookmark_card(bookmark, translations):
     read_button_icon = ICON_READ if is_read else ICON_UNREAD
 
     return f"""
-    <div id="bookmark-card-{id}" class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}" hx-swap-oob="outerHTML">
+    <div id="bookmark-card-{id}" class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}" data-bookmark-json="{bookmark_json_html}" hx-swap-oob="outerHTML">
         <div class="bookmark-main">
             <div class="bookmark-visuals">
-                <div class="image-placeholder">
-                    <img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image">
+                <div class="image-placeholder{'' if image_url else ' has-error'}">
+                    {f'<img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image">' if image_url else ''}
                 </div>
                 <div class="bookmark-actions">
                     <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>                    
@@ -78,7 +78,7 @@ def render_bookmark_card(bookmark, translations):
                         class="icon-btn edit"
                         title="{translations.get('tooltip_edit', 'Edit')}"
                         data-bookmark-json="{bookmark_json_html}"
-                        @click="$dispatch('open-edit-modal', $el.dataset.bookmarkJson)"
+                        @click="$dispatch('open-edit-modal', $event.currentTarget.dataset.bookmarkJson)"
                     >{ICON_EDIT}</button>
                     <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
                 </div>
@@ -88,8 +88,14 @@ def render_bookmark_card(bookmark, translations):
             </div>
         </div>
         <p class="bookmark-description">{escape_html(description)}</p>
+        <div class="bookmark-tags">
+            {''.join(f'<span class="tag">{escape_html(t)}</span>' for t in (json.loads(tags) if isinstance(tags, str) and tags else (tags or [])))}
+        </div>
         <div class="bookmark-footer">
-            <span class="bookmark-date">{saved_at}</span>
+            <div class="bookmark-footer-meta">
+                <span class="bookmark-date">{saved_at.split(' ')[0]}</span>
+                <span class="bookmark-id">ID {id}</span>
+            </div>
             {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN} HN Comments</a>' if comments_url else ''}
         </div>
     </div>
@@ -97,7 +103,7 @@ def render_bookmark_card(bookmark, translations):
 
 def render_bookmark_compact_item(bookmark, translations):
     """Renders a single bookmark as a compact list item."""
-    (id, url, title, _, image_url, domain, saved_at, _, _, comments_url, is_read) = bookmark
+    (id, url, title, _, image_url, domain, saved_at, telegram_user_id, telegram_message_id, comments_url, tags, is_read) = bookmark
 
     def escape_html(text):
         if text is None: return ""  # noqa: E701
@@ -106,6 +112,14 @@ def render_bookmark_compact_item(bookmark, translations):
     bookmark_data_json = json.dumps({
         'id': id, 'url': url, 'title': title, 'description': _, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
     }, ensure_ascii=False)
+    # include tags in compact item JSON
+    try:
+        compact_tags = json.loads(tags) if isinstance(tags, str) and tags else (tags or [])
+    except Exception:
+        compact_tags = []
+    bookmark_data_json = json.dumps({
+        'id': id, 'url': url, 'title': title, 'description': _, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read, 'tags': compact_tags
+    }, ensure_ascii=False)
     bookmark_json_html = bookmark_data_json.replace("\\", "\\\\").replace("'", "&#39;").replace('"', '&quot;')
 
     class_attr = f"compact-item {'read' if is_read else ''}".strip()
@@ -113,12 +127,14 @@ def render_bookmark_compact_item(bookmark, translations):
     read_button_icon = ICON_READ if is_read else ICON_UNREAD
 
     return f"""
-    <div class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}" id="bookmark-compact-{id}" hx-swap-oob="outerHTML">
+    <div class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}" id="bookmark-compact-{id}" data-bookmark-json="{bookmark_json_html}" hx-swap-oob="outerHTML">
         <img src="{escape_html(image_url)}" alt="" class="compact-image">
         <div class="image-placeholder" style="display:none;">🔗</div>
         <div class="compact-content">
             <a href="{escape_html(url)}" target="_blank" class="compact-title" title="{escape_html(title)}">{escape_html(title)}</a>
             <span class="compact-domain">{escape_html(domain)}</span>
+            <span class="compact-id">ID {id}</span>
+            <div class="compact-tags">{''.join(f'<span class="tag">{escape_html(t)}</span>' for t in (json.loads(tags) if isinstance(tags, str) and tags else (tags or [])))}</div>
         </div>
         <div class="compact-date">{saved_at.split(' ')[0]}</div>
         <div class="compact-badges">
@@ -130,7 +146,7 @@ def render_bookmark_compact_item(bookmark, translations):
                 class="icon-btn edit"
                 title="{translations.get('tooltip_edit', 'Edit')}"
                 data-bookmark-json="{bookmark_json_html}"
-                @click="$dispatch('open-edit-modal', $el.dataset.bookmarkJson)"
+                @click="$dispatch('open-edit-modal', $event.currentTarget.dataset.bookmarkJson)"
             >{ICON_EDIT}</button>
             <button class="icon-btn delete" data-id="{id}" title="{translations.get('tooltip_delete', 'Delete')}">{ICON_DELETE}</button>
         </div>
@@ -168,7 +184,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                  hx-trigger="revealed"
                  hx-swap="outerHTML"
                  hx-indicator="#loadingIndicator"
-                 :hx-vals="safeJsonStringify({{'offset': {next_offset}, 'limit': {self.DEFAULT_PAGE_SIZE}, 'sort_order': sortOrder, 'search_query': searchQuery, 'hide_read': hideRead, 'filter_type': activeSpecialFilter}})"
+                 :hx-vals="getHtmxVals({next_offset})"
                  class="load-more-trigger">
                 {translations.get('loading', 'Loading more bookmarks...')}
             </div>
@@ -206,12 +222,18 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                 theme: 'light',
                 view: 'cards',
                 sortOrder: 'desc',
-                safeJsonStringify: (data) => JSON.stringify(data),
                 hideRead: true,
                 activeSpecialFilter: null,
                 searchQuery: '{search_value}',
-                get htmxVals() {{
-                    return this.safeJsonStringify({{'sort_order': this.sortOrder, 'hide_read': this.hideRead, 'filter_type': this.activeSpecialFilter, 'search_query': this.searchQuery, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}});
+                getHtmxVals: function(offset = 0) {{
+                    return JSON.stringify({{
+                        'sort_order': this.sortOrder,
+                        'hide_read': this.hideRead,
+                        'filter_type': this.activeSpecialFilter,
+                        'search_query': this.searchQuery,
+                        'limit': {self.DEFAULT_PAGE_SIZE},
+                        'offset': offset
+                    }});
                 }},
                 init: function() {{
                     const savedTheme = localStorage.getItem('theme');
@@ -221,6 +243,9 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     const savedHideRead = localStorage.getItem('hideRead');
                     this.hideRead = savedHideRead !== null ? JSON.parse(savedHideRead) : true;
 
+                    const savedSortOrder = localStorage.getItem('sortOrder');
+                    this.sortOrder = savedSortOrder || 'desc';
+
                     const savedView = localStorage.getItem('view');
                     this.view = savedView || 'cards'; // Default to cards if not saved
 
@@ -229,8 +254,8 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
 
                     // Watch for changes in searchQuery and trigger an htmx request.
                     // This is the CSP-compliant way to link Alpine state to htmx triggers.
-                    this.$watch('searchQuery', () => {{
-                        htmx.trigger('#searchBox', 'search', {{}});
+                    this.$watch('searchQuery', (value) => {{
+                        window.htmx.trigger('#searchBox', 'search');
                     }});
                 }},
                 toggleTheme: function() {{
@@ -247,22 +272,17 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                 }},
                 toggleSort: function() {{
                     this.sortOrder = (this.sortOrder === 'desc' ? 'asc' : 'desc');
-                    // With htmx, it's no longer necessary to call a function for sorting.
-                    // The button itself will handle making the request.
-                    // We'll leave this method here as it might be used by other parts.
+                    localStorage.setItem('sortOrder', this.sortOrder);
+                    window.htmx.trigger('#searchBox', 'search');
                 }},
                 toggleHideRead: function() {{
                     this.hideRead = !this.hideRead;
                     localStorage.setItem('hideRead', this.hideRead);
-                    // Con htmx, non è più necessario chiamare triggerSearch().
-                    // Il pulsante stesso si occuperà di fare la richiesta.
-                    // triggerSearch();
+                    window.htmx.trigger('#searchBox', 'search');
                 }},
                 toggleSpecialFilter: function(filter) {{
                     this.activeSpecialFilter = this.activeSpecialFilter === filter ? null : filter;
-                    // Ensure other special filters are deactivated if you add more in the future
-                    // For now, this is enough.
-                    htmx.trigger('#searchBox', 'search');
+                    window.htmx.trigger('#searchBox', 'search');
                 }},
                 changeLanguage: function(event) {{
                     window.location.href = '/?lang=' + event.target.value;
@@ -288,14 +308,22 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
 
                 openAdd: function() {{
                     this.isEditing = false;
-                    this.bookmark = {{ id: '', url: '', title: '', description: '', image_url: '', comments_url: '', telegram_user_id: '', is_read: false }};
+                    this.bookmark = {{ id: '', url: '', title: '', description: '', image_url: '', comments_url: '', telegram_user_id: '', tags: '', is_read: false }};
                     this.isOpen = true;
                 }},
 
                 openEdit: function(bookmarkDataString) {{
                     this.isEditing = true;
                     const bookmarkData = JSON.parse(bookmarkDataString);
-                    this.bookmark = {{ ...bookmarkData, is_read: bookmarkData.is_read == 1 }};
+                    // Normalize tags to a comma-separated string for editing
+                    let tagsStr = '';
+                    if (bookmarkData.tags) {{
+                        try {{
+                            if (Array.isArray(bookmarkData.tags)) tagsStr = bookmarkData.tags.join(', ');
+                            else if (typeof bookmarkData.tags === 'string' && bookmarkData.tags) tagsStr = bookmarkData.tags;
+                        }} catch (e) {{ tagsStr = '' }}
+                    }}
+                    this.bookmark = {{ ...bookmarkData, tags: tagsStr, is_read: bookmarkData.is_read == 1 }};
                     this.isOpen = true;
                 }},
 
@@ -431,7 +459,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                    hx-trigger="keyup changed delay:500ms, search"
                    hx-target="body" 
                    hx-swap="none"
-                   :hx-vals="htmxVals"
+                   :hx-vals="getHtmxVals(0)"
             >
             <button type="button" id="clearSearchBtn" class="clear-search-btn" title="{translations.get('tooltip_clear_search', 'Clear search')}" x-show="searchQuery" @click="searchQuery = '';" x-cloak>&times;</button>
         </div>
@@ -444,12 +472,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
             <button type="button" class="view-btn" id="sortToggleBtn" 
                     title="{translations.get('tooltip_change_sort', 'Change sort order')}" 
                     x-on:click="toggleSort()" 
-                    x-text="sortOrder === 'desc' ? '{translations.get('sort_newest', 'Newest First')}' : '{translations.get('sort_oldest', 'Oldest First')}'"
-                    hx-get="/ui/bookmarks"
-                    hx-trigger="click"
-                    hx-target="body"
-                    hx-swap="none"
-                    :hx-vals="safeJsonStringify({{'sort_order': sortOrder === 'desc' ? 'asc' : 'desc', 'search_query': searchQuery, 'hide_read': hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
+                    x-text="sortOrder === 'asc' ? '{translations.get('sort_oldest', 'Oldest First')}' : '{translations.get('sort_newest', 'Newest First')}'"
             ></button>
             <button type="button" class="view-btn" id="viewToggleBtn" title="{translations.get('tooltip_change_view', 'Change view')}" x-on:click="toggleView()" x-text="view === 'cards' ? '{translations.get('compact_view', 'Compact View')}' : '{translations.get('card_view', 'Card View')}'"></button>
             <button type="button" class="view-btn" id="themeToggleBtn" title="{translations.get('tooltip_change_theme', 'Change theme')}" x-on:click="toggleTheme()" x-text="theme === 'dark' ? '{translations.get('light_mode', 'Light Mode')}' : '{translations.get('dark_mode', 'Dark Mode')}'"></button>
@@ -463,14 +486,9 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
         <!-- Special filters -->
         <div class="special-filters">
             <button class="filter-btn" id="hideReadBtn"
-                    @click="toggleHideRead()" 
-                    :class="{{'active': hideRead}}" 
+                    @click="toggleHideRead()"
+                    :class="hideRead ? 'active' : ''" 
                     title="{translations.get('tooltip_toggle_read', 'Toggle read...')}"
-                    hx-get="/ui/bookmarks"
-                    hx-trigger="click"
-                    hx-target="body"
-                    hx-swap="none"
-                    :hx-vals="safeJsonStringify({{'sort_order': sortOrder, 'search_query': searchQuery, 'hide_read': !hideRead, 'filter_type': activeSpecialFilter, 'limit': {self.DEFAULT_PAGE_SIZE}, 'offset': 0}})"
             >{translations.get('hide_read', 'Hide Read')}</button>
             <a href="/api/export/csv" class="filter-btn" download="bookmarks.csv" target="_blank" title="{translations.get('tooltip_export_csv', 'Export...')}">{translations.get('export_csv', 'Export CSV')}</a>
             <a href="/logout" class="filter-btn" title="{translations.get('tooltip_logout', 'Logout...')}">{translations.get('logout', 'Logout')}</a>
@@ -541,10 +559,15 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                             <label for="edit-description">{translations.get('modal_label_description', 'Description')}:</label>
                             <textarea id="edit-description" name="description" rows="3" title="{translations.get('tooltip_modal_description', 'Description...')}" :value="bookmark.description" @input="updateField('description', $event.target.value)"></textarea>
                         </div>
-                        <div class="form-group full-width-grid-column">
+                            <div class="form-group full-width-grid-column">
                             <label for="edit-comments_url">{translations.get('modal_label_hn_url', 'HackerNews URL')}:</label>
                             <input type="url" id="edit-comments_url" name="comments_url" title="{translations.get('tooltip_modal_hn_url', 'HN URL...')}" :value="bookmark.comments_url" @input="updateField('comments_url', $event.target.value)">
                         </div>
+                            <div class="form-group full-width-grid-column">
+                                <label for="edit-tags">{translations.get('modal_label_tags', 'Tags (comma-separated)')}:</label>
+                                <input type="text" id="edit-tags" name="tags" title="{translations.get('tooltip_modal_tags', 'Tags...')}" :value="bookmark.tags" @input="updateField('tags', $event.target.value)">
+                                <small>{translations.get('modal_help_tags', 'Separate tags with commas. Delete a tag by removing it from the field.')}</small>
+                            </div>
                         <div class="form-group">
                             <label for="edit-telegram_user_id">{translations.get('modal_label_user_id', 'Telegram User ID')}:</label>
                             <input type="number" id="edit-telegram_user_id" name="telegram_user_id" title="{translations.get('tooltip_modal_user_id', 'User ID...')}" :value="bookmark.telegram_user_id" @input="updateField('telegram_user_id', $event.target.valueAsNumber)">

@@ -56,6 +56,7 @@ def init_database(conn=None):
             description TEXT,
             image_url TEXT,
             domain TEXT,
+            tags TEXT,
             saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             telegram_user_id INTEGER,
             telegram_message_id INTEGER,
@@ -89,10 +90,16 @@ def init_database(conn=None):
     try:
         cursor.execute("PRAGMA table_info(bookmarks)")
         columns = [col[1] for col in cursor.fetchall()]
-        if "telegram_user_id" not in columns: cursor.execute("ALTER TABLE bookmarks ADD COLUMN telegram_user_id INTEGER")
-        if "comments_url" not in columns: cursor.execute("ALTER TABLE bookmarks ADD COLUMN comments_url TEXT")
-        if "is_read" not in columns: cursor.execute("ALTER TABLE bookmarks ADD COLUMN is_read INTEGER DEFAULT 0")
-        if "user_id" not in columns: cursor.execute("ALTER TABLE bookmarks ADD COLUMN user_id INTEGER")
+        if "telegram_user_id" not in columns:
+            cursor.execute("ALTER TABLE bookmarks ADD COLUMN telegram_user_id INTEGER")
+        if "comments_url" not in columns:
+            cursor.execute("ALTER TABLE bookmarks ADD COLUMN comments_url TEXT")
+        if "tags" not in columns:
+            cursor.execute("ALTER TABLE bookmarks ADD COLUMN tags TEXT")
+        if "is_read" not in columns:
+            cursor.execute("ALTER TABLE bookmarks ADD COLUMN is_read INTEGER DEFAULT 0")
+        if "user_id" not in columns:
+            cursor.execute("ALTER TABLE bookmarks ADD COLUMN user_id INTEGER")
     except Exception as e:
         logger.warning("Could not perform database migration: %s", e)
 

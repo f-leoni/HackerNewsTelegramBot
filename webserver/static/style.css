@@ -271,6 +271,33 @@ h1 {
     margin-bottom: 12px;
 }
 
+.compact-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.bookmark-tags{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #e5f2ff;
+    color: #055a8c;
+    font-size: 0.85em;
+    font-weight: 600;
+    border: 1px solid #bee0ff;
+    white-space: nowrap;
+}
+
 .bookmark-footer {
     display: flex;
     justify-content: space-between;
@@ -282,6 +309,17 @@ h1 {
 }
 
 .bookmark-date {
+    font-weight: 500;
+}
+
+.bookmark-footer-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.bookmark-id {
+    color: #aaa;
     font-weight: 500;
 }
 
@@ -332,6 +370,12 @@ h1 {
     margin-bottom: 2px;
     font-size: 16px;
     line-height: 1.2;
+}
+
+.compact-id {
+    color: #aaa;
+    font-size: 12px;
+    font-weight: 500;
 }
 
 .compact-item .image-placeholder.has-error::before {
@@ -644,6 +688,8 @@ html.dark-mode a:hover {
 
 html.dark-mode .bookmark-description,
 html.dark-mode .bookmark-date,
+html.dark-mode .bookmark-id,
+html.dark-mode .compact-id,
 html.dark-mode .compact-date {
     color: #a0a0a0;
 }

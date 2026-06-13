@@ -109,9 +109,9 @@ def test_save_bookmark_integration(bot_instance, db_for_bot):
     saved_data = cursor.fetchone()
 
     assert saved_data is not None
-    # Columns: id, user_id, url, title, description, image_url, domain, saved_at, telegram_user_id, telegram_message_id, ...
+    # Columns: id, user_id, url, title, description, image_url, domain, tags, saved_at, telegram_user_id, telegram_message_id, ...
     assert saved_data[1] == 1  # Associated with web_user_id 1
     assert saved_data[2] == url_to_save
     assert saved_data[3] == "Integration Test Bookmark"
-    assert saved_data[8] == 12345 # telegram_user_id
-    assert saved_data[9] == 54321 # telegram_message_id
+    assert saved_data[9] == 12345 # telegram_user_id
+    assert saved_data[10] == 54321 # telegram_message_id

@@ -25,7 +25,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
  
-from shared.utils import extract_domain, get_article_metadata
+from shared.utils import extract_domain, get_article_metadata, generate_tags
 from shared.database import get_db_path
 from .htmldata import get_html, render_bookmarks, render_bookmarks_compact, get_login_page
 __version__ = "2.0.5"
@@ -532,7 +532,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 'telegram_user_id': bookmark[7],
                 'telegram_message_id': bookmark[8],
                 'comments_url': bookmark[9],
-                'is_read': bookmark[10] if len(bookmark) > 10 else 0
+                'tags': json.loads(bookmark[10]) if len(bookmark) > 10 and bookmark[10] else [],
+                'is_read': bookmark[11] if len(bookmark) > 11 else 0
             })
 
         self._send_json_response(200, bookmark_list)
@@ -667,7 +668,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             writer = csv.writer(output, quoting=csv.QUOTE_ALL)
 
             # Write header
-            header = ['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read']
+            header = ['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'tags', 'is_read']
             writer.writerow(header)
 
             # Write data rows, manually sanitizing fields to prevent issues.
@@ -678,7 +679,18 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 return str(field).replace('"', '""').replace('\n', ' ').replace('\r', ' ')
 
             for row in bookmarks:
-                sanitized_row = [sanitize_field(field) for field in row]
+                # Ensure tags (which may be JSON) are serialized as a string
+                row_list = list(row)
+                if len(row_list) > 10:
+                    try:
+                        tags_val = row_list[10]
+                        if isinstance(tags_val, (list, dict)):
+                            row_list[10] = json.dumps(tags_val, ensure_ascii=False)
+                        else:
+                            row_list[10] = tags_val or ''
+                    except Exception:
+                        row_list[10] = ''
+                sanitized_row = [sanitize_field(field) for field in row_list]
                 writer.writerow(sanitized_row)
 
             csv_data = output.getvalue().encode('utf-8')
@@ -714,7 +726,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
     def _get_current_bookmark_data(self, cursor, bookmark_id, user_id):
         """Helper to fetch the current state of a bookmark."""
         cursor.execute("""
-            SELECT url, title, description, image_url, comments_url, telegram_user_id, telegram_message_id, COALESCE(is_read, 0) as is_read
+            SELECT url, title, description, image_url, comments_url, tags, telegram_user_id, telegram_message_id, COALESCE(is_read, 0) as is_read
             FROM bookmarks
             WHERE id = ? AND user_id = ?
         """, (bookmark_id, user_id))
@@ -723,9 +735,18 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         if not row:
             return None
 
-        # Map columns to a dictionary
-        columns = ['url', 'title', 'description', 'image_url', 'comments_url', 'telegram_user_id', 'telegram_message_id', 'is_read']
-        return dict(zip(columns, row))
+        # Map columns to a dictionary and parse tags JSON if present
+        columns = ['url', 'title', 'description', 'image_url', 'comments_url', 'tags', 'telegram_user_id', 'telegram_message_id', 'is_read']
+        data = dict(zip(columns, row))
+        tags_val = data.get('tags')
+        if isinstance(tags_val, str) and tags_val:
+            try:
+                data['tags'] = json.loads(tags_val)
+            except Exception:
+                data['tags'] = []
+        elif tags_val is None:
+            data['tags'] = []
+        return data
 
     def _normalize_field(self, value):
         """Normalize values for comparison to avoid false positives on changes."""
@@ -735,6 +756,12 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             return 1 if value else 0
         if isinstance(value, str):
             return value.strip()
+        if isinstance(value, (list, tuple)):
+            try:
+                # Convert lists to stable JSON string for comparison
+                return json.dumps(value, ensure_ascii=False)
+            except Exception:
+                return str(value)
         return value
 
     def _compare_and_get_changed_fields(self, current_data, new_data):
@@ -773,7 +800,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             # Filter only allowed fields from the incoming request
             new_data = {}
-            allowed = ['url', 'title', 'description', 'image_url', 'comments_url', 'telegram_user_id', 'telegram_message_id', 'is_read']
+            allowed = ['url', 'title', 'description', 'image_url', 'comments_url', 'telegram_user_id', 'telegram_message_id', 'is_read', 'tags']
             for k in allowed:
                 if k in data:
                     new_data[k] = data[k]
@@ -787,6 +814,15 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 del new_data['url']
 
             current_user_id = self.get_current_user()
+
+            # Normalize incoming tags if provided (allow comma-separated string or list)
+            if 'tags' in new_data:
+                t = new_data.get('tags')
+                if isinstance(t, str):
+                    # Split by comma and strip
+                    new_data['tags'] = [s.strip() for s in t.split(',') if s.strip()]
+                elif isinstance(t, (list, tuple)):
+                    new_data['tags'] = [str(x).strip() for x in t if str(x).strip()]
 
             with db_connection() as cursor:
                 # 1. Get the current state of the bookmark
@@ -815,6 +851,13 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                             raise sqlite3.IntegrityError("URL already exists for another bookmark.")
 
                     # 3. Build and execute the UPDATE query only for changed fields
+                    # If tags is present, serialize to JSON string for storage
+                    if 'tags' in fields_to_update:
+                        try:
+                            fields_to_update['tags'] = json.dumps(fields_to_update['tags'], ensure_ascii=False)
+                        except Exception:
+                            fields_to_update['tags'] = '[]'
+
                     set_clause = ', '.join([f"{k} = ?" for k in fields_to_update.keys()])
                     params = list(fields_to_update.values())
                     cursor.execute(f"UPDATE bookmarks SET {set_clause} WHERE id = ? AND user_id = ?", params + [bookmark_id, current_user_id])
@@ -823,7 +866,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 cursor.execute("""
                     SELECT id, url, title, description, image_url, domain,
                         datetime(saved_at, 'localtime') as saved_at,
-                        telegram_user_id, telegram_message_id, comments_url,
+                        telegram_user_id, telegram_message_id, comments_url, tags,
                         COALESCE(is_read, 0) as is_read
                     FROM bookmarks WHERE id = ?
                 """, (bookmark_id,))
@@ -855,7 +898,14 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 self._send_html_response(200, html_response)
             else:
                 # For non-htmx requests, return JSON as before
-                updated_bookmark = dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], updated_bookmark_tuple))
+                # Map tags from JSON string to Python list if present
+                ub_cols = ['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'tags', 'is_read']
+                updated_bookmark = dict(zip(ub_cols, updated_bookmark_tuple))
+                if isinstance(updated_bookmark.get('tags'), str) and updated_bookmark.get('tags'):
+                    try:
+                        updated_bookmark['tags'] = json.loads(updated_bookmark['tags'])
+                    except Exception:
+                        updated_bookmark['tags'] = []
                 self._send_json_response(200, updated_bookmark)
         except sqlite3.IntegrityError as e:
             # Provide a more specific error message if possible
@@ -950,19 +1000,35 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
                 is_read_value = 1 if data.get('is_read') in [True, 'true', '1', 1] else 0
 
+                title = data.get('title') or ''
+                description = data.get('description') or ''
+                # Determine tags: prefer user-provided tags, else generate
+                if 'tags' in data and data.get('tags'):
+                    provided = data.get('tags')
+                    if isinstance(provided, str):
+                        tags_list = [s.strip() for s in provided.split(',') if s.strip()]
+                    elif isinstance(provided, (list, tuple)):
+                        tags_list = [str(x).strip() for x in provided if str(x).strip()]
+                    else:
+                        tags_list = []
+                else:
+                    tags_list = generate_tags(f"{title} \n {description}", n=3)
+                tags_json = json.dumps(tags_list, ensure_ascii=False)
+
                 cursor.execute("""
-                    INSERT INTO bookmarks (user_id, url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url, is_read)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO bookmarks (user_id, url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url, tags, is_read)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     user_id,
                     url,
-                    data.get('title'),
-                    data.get('description'),
+                    title,
+                    description,
                     data.get('image_url'),
                     domain,
                     data.get('telegram_user_id') if data.get('telegram_user_id') else None,
                     data.get('telegram_message_id') if data.get('telegram_message_id') else None,
                     data.get('comments_url'),
+                    tags_json,
                     is_read_value
                 ))
 
@@ -970,7 +1036,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 cursor.execute("""
                     SELECT id, url, title, description, image_url, domain,
                         datetime(saved_at, 'localtime') as saved_at,
-                        telegram_user_id, telegram_message_id, comments_url,
+                        telegram_user_id, telegram_message_id, comments_url, tags,
                         COALESCE(is_read, 0) as is_read
                     FROM bookmarks WHERE id = ?
                 """, (new_bookmark_id,))
@@ -980,7 +1046,13 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 self._send_error_response(500, "Failed to retrieve newly created bookmark")
                 return
 
-            new_bookmark = dict(zip(['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'], new_bookmark_tuple))
+            nb_cols = ['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'tags', 'is_read']
+            new_bookmark = dict(zip(nb_cols, new_bookmark_tuple))
+            if isinstance(new_bookmark.get('tags'), str) and new_bookmark.get('tags'):
+                try:
+                    new_bookmark['tags'] = json.loads(new_bookmark['tags'])
+                except Exception:
+                    new_bookmark['tags'] = []
             self._send_json_response(201, new_bookmark)
 
         except ValueError as e:
@@ -1050,8 +1122,9 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             where_clauses.append("is_read = 0")
 
         if search_query:
-            where_clauses.append("(title LIKE ? OR description LIKE ? OR url LIKE ? OR domain LIKE ?)")
-            params.extend([f'%{search_query}%'] * 4)
+            like_query = f'%{search_query}%'
+            where_clauses.append("(title LIKE ? OR description LIKE ? OR url LIKE ? OR domain LIKE ? OR tags LIKE ?)")
+            params.extend([like_query] * 5)
 
         return " AND ".join(where_clauses), params
 
@@ -1073,11 +1146,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 query = """
                     SELECT id, url, title, description, image_url, domain,
                         datetime(saved_at, 'localtime') as saved_at,
-                        telegram_user_id, telegram_message_id, comments_url,
+                        telegram_user_id, telegram_message_id, comments_url, tags,
                         COALESCE(is_read, 0) as is_read
                     FROM bookmarks
                     WHERE {where_clause}
-                    ORDER BY saved_at {order}
+                    ORDER BY id {order}
                     {limit_clause}
                 """.format(where_clause=where_clause, order=order, limit_clause=limit_clause)
                 cursor.execute(query, query_params)
