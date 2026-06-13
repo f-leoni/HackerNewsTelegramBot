@@ -17,6 +17,7 @@ def get_login_page(self, error=None):
     <link rel="alternate icon" href="/favicon.ico" type="image/x-icon">
     <link rel="apple-touch-icon" href="/static/img/favicon.svg">
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/export-styles.css">
     <style nonce="{self.nonce}">
         body {{ display: flex; align-items: center; justify-content: center; }}
         .login-container {{ background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }}
@@ -54,9 +55,20 @@ def render_bookmark_card(bookmark, translations):
         if text is None: return ""  # noqa: E701
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
 
+    # Handle tags safely - they might be JSON string, empty, or invalid
+    try:
+        if isinstance(tags, str) and tags.strip():
+            parsed_tags = json.loads(tags)
+        elif isinstance(tags, (list, dict)):
+            parsed_tags = tags
+        else:
+            parsed_tags = []
+    except (json.JSONDecodeError, AttributeError):
+        parsed_tags = []
+    
     bookmark_data_json = json.dumps({
         'id': id, 'url': url, 'title': title, 'description': description,
-        'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read, 'tags': (json.loads(tags) if isinstance(tags, str) and tags else (tags or []))
+        'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read, 'tags': parsed_tags
     }, ensure_ascii=False)
     bookmark_json_html = bookmark_data_json.replace("\\", "\\\\").replace("'", "&#39;").replace('"', '&quot;')
 
@@ -89,7 +101,7 @@ def render_bookmark_card(bookmark, translations):
         </div>
         <p class="bookmark-description">{escape_html(description)}</p>
         <div class="bookmark-tags">
-            {''.join(f'<span class="tag">{escape_html(t)}</span>' for t in (json.loads(tags) if isinstance(tags, str) and tags else (tags or [])))}
+            {''.join(f'<span class="tag">{escape_html(t)}</span>' for t in parsed_tags)}
         </div>
         <div class="bookmark-footer">
             <div class="bookmark-footer-meta">
@@ -114,8 +126,13 @@ def render_bookmark_compact_item(bookmark, translations):
     }, ensure_ascii=False)
     # include tags in compact item JSON
     try:
-        compact_tags = json.loads(tags) if isinstance(tags, str) and tags else (tags or [])
-    except Exception:
+        if isinstance(tags, str) and tags.strip():
+            compact_tags = json.loads(tags)
+        elif isinstance(tags, (list, dict)):
+            compact_tags = tags
+        else:
+            compact_tags = []
+    except (json.JSONDecodeError, AttributeError):
         compact_tags = []
     bookmark_data_json = json.dumps({
         'id': id, 'url': url, 'title': title, 'description': _, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read, 'tags': compact_tags
@@ -134,7 +151,7 @@ def render_bookmark_compact_item(bookmark, translations):
             <a href="{escape_html(url)}" target="_blank" class="compact-title" title="{escape_html(title)}">{escape_html(title)}</a>
             <span class="compact-domain">{escape_html(domain)}</span>
             <span class="compact-id">ID {id}</span>
-            <div class="compact-tags">{''.join(f'<span class="tag">{escape_html(t)}</span>' for t in (json.loads(tags) if isinstance(tags, str) and tags else (tags or [])))}</div>
+            <div class="compact-tags">{''.join(f'<span class="tag">{escape_html(t)}</span>' for t in compact_tags)}</div>
         </div>
         <div class="compact-date">{saved_at.split(' ')[0]}</div>
         <div class="compact-badges">
@@ -164,6 +181,81 @@ def render_bookmarks_compact(bookmarks, translations):
     if not bookmarks:
         return f"<p>{translations.get('no_bookmarks_found', 'No bookmarks found.')}</p>"
     return "".join(render_bookmark_compact_item(b, translations) for b in bookmarks)
+
+
+def render_bookmark_card_export(bookmark, translations):
+    """Renders a single bookmark as an HTML card for export (no action buttons)."""
+    # Handle both tuple and dict formats
+    if isinstance(bookmark, tuple):
+        (id, url, title, description, image_url, domain, saved_at, telegram_user_id, telegram_message_id, comments_url, tags, is_read) = bookmark
+    else:  # dict format
+        id = bookmark['id']
+        url = bookmark['url']
+        title = bookmark['title']
+        description = bookmark['description']
+        image_url = bookmark['image_url']
+        domain = bookmark['domain']
+        saved_at = bookmark['saved_at']
+        telegram_user_id = bookmark['telegram_user_id']
+        telegram_message_id = bookmark['telegram_message_id']
+        comments_url = bookmark['comments_url']
+        tags = bookmark['tags']
+        is_read = bookmark['is_read']
+    
+    def escape_html(text):
+        if text is None: return ""  # noqa: E701
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
+
+    # Handle tags safely - they might be JSON string, empty, or invalid
+    try:
+        if isinstance(tags, str) and tags.strip():
+            parsed_tags = json.loads(tags)
+        elif isinstance(tags, (list, dict)):
+            parsed_tags = tags
+        else:
+            parsed_tags = []
+    except (json.JSONDecodeError, AttributeError):
+        parsed_tags = []
+
+    class_attr = f"bookmark-card {'read' if is_read else ''}".strip()
+    read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
+    read_button_icon = ICON_READ if is_read else ICON_UNREAD
+
+    return f"""
+    <div id="bookmark-card-{id}" class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}">
+        <div class="bookmark-main">
+            <div class="bookmark-visuals">
+                <div class="image-placeholder{'' if image_url else ' has-error'}">
+                    {f'<img src="{escape_html(image_url)}" alt="Preview" class="bookmark-image">' if image_url else ''}
+                </div>
+                <div class="bookmark-actions">
+                    <a href="{escape_html(url)}" target="_blank" class="icon-btn" title="{translations.get('tooltip_open_link', 'Open link')}">{ICON_OPEN}</a>                    
+                </div>
+            </div>
+            <div class="bookmark-details">
+                <h3 class="bookmark-title"><a href="{escape_html(url)}" target="_blank">{escape_html(title)}</a></h3>
+            </div>
+        </div>
+        <p class="bookmark-description">{escape_html(description)}</p>
+        <div class="bookmark-tags">
+            {''.join(f'<span class="tag">{escape_html(t)}</span>' for t in parsed_tags)}
+        </div>
+        <div class="bookmark-footer">
+            <div class="bookmark-footer-meta">
+                <span class="bookmark-date">{saved_at.split(' ')[0]}</span>
+                <span class="bookmark-id">ID {id}</span>
+            </div>
+            {f'<a href="{escape_html(comments_url)}" target="_blank" class="hn-link" title="{translations.get("tooltip_hn_comments", "View HN comments")}">{ICON_HN} HN Comments</a>' if comments_url else ''}
+        </div>
+    </div>
+    """
+
+
+def render_bookmarks_export(bookmarks, translations):
+    """Renders a list of bookmarks into HTML cards for export (no action buttons)."""
+    if not bookmarks:
+        return f"<p>{translations.get('no_bookmarks_found', 'No bookmarks found.')}</p>"
+    return "".join(render_bookmark_card_export(b, translations) for b in bookmarks)
 
 def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, search_query=None, has_more=False):
     # HTML escape function to avoid issues with quotes in data
@@ -205,6 +297,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
     <link rel="alternate icon" href="/favicon.ico" type="image/x-icon">
     <link rel="apple-touch-icon" href="/static/img/favicon.svg">
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/export-styles.css">
     <script src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.x.x/dist/cdn.min.js" nonce="{self.nonce}" defer></script>
     <meta name="htmx-config" content='{{"defaultSwapTransition": false}}'>
     <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous" nonce="{self.nonce}"></script>
@@ -490,7 +583,22 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     :class="hideRead ? 'active' : ''" 
                     title="{translations.get('tooltip_toggle_read', 'Toggle read...')}"
             >{translations.get('hide_read', 'Hide Read')}</button>
-            <a href="/api/export/csv" class="filter-btn" download="bookmarks.csv" target="_blank" title="{translations.get('tooltip_export_csv', 'Export...')}">{translations.get('export_csv', 'Export CSV')}</a>
+            <div class="export-dropdown">
+                <button class="filter-btn export-btn" title="{translations.get('tooltip_export', 'Export bookmarks...')}">
+                    📤 {translations.get('export', 'Export')}
+                </button>
+                <div class="export-menu">
+                    <a href="/api/export/csv" download="bookmarks.csv" title="{translations.get('tooltip_export_csv', 'Export to CSV...')}">
+                        {translations.get('export_csv', 'CSV')}
+                    </a>
+                    <a href="/api/export/json" download="bookmarks.json" title="{translations.get('tooltip_export_json', 'Export to JSON...')}">
+                        {translations.get('export_json', 'JSON')}
+                    </a>
+                    <a href="/api/export/html" download="bookmarks.html" title="{translations.get('tooltip_export_html', 'Export to HTML...')}">
+                        {translations.get('export_html', 'HTML')}
+                    </a>
+                </div>
+            </div>
             <a href="/logout" class="filter-btn" title="{translations.get('tooltip_logout', 'Logout...')}">{translations.get('logout', 'Logout')}</a>
         </div>
 

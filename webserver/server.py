@@ -223,6 +223,10 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self.serve_bookmarks_api(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query, sort_order=sort_order)
         elif path == '/api/export/csv':
             self.serve_export_csv()
+        elif path == '/api/export/json':
+            self.serve_export_json()
+        elif path == '/api/export/html':
+            self.serve_export_html()
         elif path == '/ui/bookmarks': # Exact path match
             query_components = parse_qs(urlparse(self.path).query)
             search_query = query_components.get("search_query", [None])[0]
@@ -704,6 +708,368 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self.wfile.write(csv_data)
         except Exception as e:
             logger.error(f"Error exporting CSV for user {user_id}: {e}")
+            # Cannot send error response if headers are already sent
+
+    def serve_export_json(self):
+        """
+        Exports all bookmarks for the current user to a JSON file.
+        """
+        user_id = self.get_current_user()
+        if not user_id:
+            self._send_error_response(401, "Authentication required")
+            return
+
+        try:
+            # Fetch all bookmarks without pagination
+            bookmarks = self.get_bookmarks(user_id, limit=-1)
+
+            # Convert bookmarks to a list of dictionaries for JSON export
+            export_data = []
+            for row in bookmarks:
+                bookmark_dict = {
+                    'id': row[0],
+                    'url': row[1],
+                    'title': row[2],
+                    'description': row[3],
+                    'image_url': row[4],
+                    'domain': row[5],
+                    'saved_at': row[6],
+                    'telegram_user_id': row[7],
+                    'telegram_message_id': row[8],
+                    'comments_url': row[9],
+                    'is_read': bool(row[11])
+                }
+                # Handle tags - they might be JSON string or already parsed
+                tags = row[10]
+                if isinstance(tags, str) and tags:
+                    try:
+                        bookmark_dict['tags'] = json.loads(tags)
+                    except json.JSONDecodeError:
+                        bookmark_dict['tags'] = [tags]
+                elif isinstance(tags, (list, dict)):
+                    bookmark_dict['tags'] = tags
+                else:
+                    bookmark_dict['tags'] = []
+                
+                export_data.append(bookmark_dict)
+
+            json_data = json.dumps(export_data, indent=2, ensure_ascii=False).encode('utf-8')
+            
+            self.send_response(200)
+            self._send_security_headers()
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Disposition', 'attachment; filename="bookmarks.json"')
+            self.send_header('Content-Length', str(len(json_data)))
+            self.end_headers()
+            self.wfile.write(json_data)
+        except Exception as e:
+            logger.error(f"Error exporting JSON for user {user_id}: {e}")
+            # Cannot send error response if headers are already sent
+
+    def serve_export_html(self):
+        """
+        Exports all bookmarks for the current user to an HTML file.
+        """
+        user_id = self.get_current_user()
+        if not user_id:
+            self._send_error_response(401, "Authentication required")
+            return
+
+        try:
+            # Fetch all bookmarks without pagination
+            bookmarks = self.get_bookmarks(user_id, limit=-1)
+
+            # Convert bookmarks to the format expected by render_bookmarks
+            bookmarks_for_rendering = []
+            for row in bookmarks:
+                bookmark_dict = {
+                    'id': row[0],
+                    'url': row[1],
+                    'title': row[2],
+                    'description': row[3],
+                    'image_url': row[4],
+                    'domain': row[5],
+                    'saved_at': row[6],
+                    'telegram_user_id': row[7],
+                    'telegram_message_id': row[8],
+                    'comments_url': row[9],
+                    'is_read': bool(row[11])
+                }
+                # Handle tags
+                tags = row[10]
+                if isinstance(tags, str) and tags:
+                    try:
+                        bookmark_dict['tags'] = json.loads(tags)
+                    except json.JSONDecodeError:
+                        bookmark_dict['tags'] = [tags]
+                elif isinstance(tags, (list, dict)):
+                    bookmark_dict['tags'] = tags
+                else:
+                    bookmark_dict['tags'] = []
+                
+                bookmarks_for_rendering.append(bookmark_dict)
+
+            # Get translations for the current user (we'll use English as default for export)
+            translations = load_translations('en')
+            
+            # Generate HTML using export-specific rendering function (no action buttons)
+            from webserver.htmldata import render_bookmarks_export
+            html_content = render_bookmarks_export(bookmarks_for_rendering, translations)
+            
+            # Wrap in a complete HTML document with comprehensive embedded CSS
+            full_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookmarks Export</title>
+    <style>
+        /* Base styles */
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+            background-color: #f8f9fa;
+        }}
+        
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+        }}
+        
+        h1 {{
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 10px;
+        }}
+        
+        .export-info {{
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }}
+        
+        /* Bookmark card styles */
+        .bookmark-card {{
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: box-shadow 0.2s;
+        }}
+        
+        .bookmark-card:hover {{
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }}
+        
+        .bookmark-card.read {{
+            opacity: 0.8;
+            border-left: 3px solid #28a745;
+        }}
+        
+        .bookmark-main {{
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+        }}
+        
+        .bookmark-visuals {{
+            flex: 0 0 120px;
+        }}
+        
+        .image-placeholder {{
+            width: 120px;
+            height: 80px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }}
+        
+        .image-placeholder.has-error {{
+            background-color: #f8d7da;
+            color: #721c24;
+        }}
+        
+        .bookmark-image {{
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }}
+        
+        .bookmark-details {{
+            flex: 1;
+        }}
+        
+        .bookmark-title {{
+            margin: 0 0 10px 0;
+            font-size: 1.1em;
+        }}
+        
+        .bookmark-title a {{
+            color: #2c3e50;
+            text-decoration: none;
+            font-weight: 500;
+        }}
+        
+        .bookmark-title a:hover {{
+            color: #0066cc;
+            text-decoration: underline;
+        }}
+        
+        .bookmark-description {{
+            color: #555;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }}
+        
+        .bookmark-tags {{
+            margin: 15px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }}
+        
+        .tag {{
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 500;
+        }}
+        
+        .bookmark-footer {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+            font-size: 0.85em;
+            color: #6c757d;
+        }}
+        
+        .bookmark-footer-meta {{
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }}
+        
+        .bookmark-date {{
+            font-weight: 500;
+        }}
+        
+        .bookmark-id {{
+            color: #adb5bd;
+        }}
+        
+        /* Action buttons for export (only open link) */
+        .bookmark-actions {{
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }}
+        
+        .icon-btn {{
+            width: 32px;
+            height: 32px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            text-decoration: none;
+            color: #495057;
+        }}
+        
+        .icon-btn:hover {{
+            background: #e9ecef;
+            border-color: #ced4da;
+            color: #212529;
+        }}
+        
+        /* HN Comments link */
+        .hn-link {{
+            color: #ff6600;
+            text-decoration: none;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }}
+        
+        .hn-link:hover {{
+            text-decoration: underline;
+        }}
+        
+        /* Responsive design */
+        @media (max-width: 768px) {{
+            .bookmark-main {{
+                flex-direction: column;
+            }}
+            
+            .bookmark-visuals {{
+                flex: 0 0 auto;
+                margin-bottom: 15px;
+            }}
+            
+            body {{
+                padding: 10px;
+            }}
+            
+            .bookmark-card {{
+                padding: 15px;
+            }}
+        }}
+        
+        /* Print styles */
+        @media print {{
+            body {{
+                background-color: white;
+                padding: 0;
+            }}
+            
+            .bookmark-card {{
+                box-shadow: none;
+                border: 1px solid #ccc;
+                page-break-inside: avoid;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📚 Bookmarks Export</h1>
+        <p class="export-info">Exported on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Total: {len(bookmarks_for_rendering)} bookmarks</p>
+        <div class="bookmarks-container">
+            {html_content}
+        </div>
+    </div>
+</body>
+</html>"""
+
+            html_data = full_html.encode('utf-8')
+            
+            self.send_response(200)
+            self._send_security_headers()
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Content-Disposition', 'attachment; filename="bookmarks.html"')
+            self.send_header('Content-Length', str(len(html_data)))
+            self.end_headers()
+            self.wfile.write(html_data)
+        except Exception as e:
+            logger.error(f"Error exporting HTML for user {user_id}: {e}")
             # Cannot send error response if headers are already sent
 
     def delete_bookmark(self, bookmark_id):
