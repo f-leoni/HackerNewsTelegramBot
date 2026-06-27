@@ -25,7 +25,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
  
-from shared.utils import extract_domain, get_article_metadata, generate_tags
+from shared.utils import extract_domain, get_article_metadata, generate_tags, generate_tags_llm
 from shared.database import get_db_path
 from .htmldata import get_html, render_bookmarks, render_bookmarks_compact, get_login_page
 __version__ = "2.0.5"
@@ -40,6 +40,28 @@ logger = logging.getLogger(__name__)
 DB_PATH = get_db_path()
 DEFAULT_PAGE_SIZE = 20 # Default number of bookmarks per page for infinite scrolling
 PORT = 8443
+
+
+def load_local_env(env_path):
+    """Load KEY=VALUE pairs from .env without overriding existing env vars."""
+    if not os.path.exists(env_path):
+        return False
+
+    with open(env_path, 'r', encoding='utf-8') as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+
+            key, value = line.split('=', 1)
+            key = key.strip()
+            if not key or key in os.environ:
+                continue
+
+            value = value.strip().strip('"').strip("'")
+            os.environ[key] = value
+
+    return True
 
 @contextmanager
 def db_connection():
@@ -1449,7 +1471,19 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 self._send_error_response(400, "URL is required")
                 return
 
+            logger.info("Scrape request received for url=%s", url)
             metadata = get_article_metadata(url)
+            metadata['tags'] = generate_tags_llm(
+                metadata.get('title', ''),
+                metadata.get('description', ''),
+                metadata.get('domain', ''),
+            )
+            logger.info(
+                "Scrape completed for url=%s domain=%s tags=%s",
+                url,
+                metadata.get('domain', ''),
+                metadata.get('tags', []),
+            )
             self._send_json_response(200, metadata)
 
         except Exception as e:
@@ -1581,6 +1615,10 @@ def main():
 
     Handles KeyboardInterrupt to shut down the server gracefully.
     """
+    env_path = os.path.join(SCRIPT_DIR, '.env')
+    env_loaded = load_local_env(env_path)
+    logger.info("Local env loaded: %s (%s)", env_loaded, env_path)
+
     parser = argparse.ArgumentParser(description="HackerNews Bookmarks Web Server", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--https', action='store_true', help='Enable HTTPS mode (default is HTTP on port 80)')
     parser.add_argument('--port', type=int, help='Specify the port for the server to listen on')

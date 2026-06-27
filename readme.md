@@ -88,6 +88,20 @@ docker-compose down
 
 Questo comando ferma e rimuove i container e la rete, ma **non cancella i dati** salvati nei volumi (database, sessione del bot e certificati SSL).
 
+### 5. Test rapido dei tag Gemini in locale
+
+Lo script [webserver/scripts/test_gemini_tags.py](webserver/scripts/test_gemini_tags.py) carica automaticamente [webserver/.env](webserver/.env) se presente, senza sovrascrivere eventuali variabili d'ambiente gia impostate nella shell. Dalla root del progetto puoi eseguirlo cosi:
+
+```powershell
+python webserver/scripts/test_gemini_tags.py --url https://example.com
+```
+
+Esempio con titolo e descrizione manuali:
+
+```powershell
+python webserver/scripts/test_gemini_tags.py --title "SQLite tips" --description "Practical notes for schema migrations"
+```
+
 ---
 ## 🌐 Internazionalizzazione (i18n)
 
@@ -158,4 +172,18 @@ docker-compose up --build -d
 To stop all services, run:
 ```bash
 docker-compose down
+```
+
+### 5. Quick local Gemini tag test
+
+The script [webserver/scripts/test_gemini_tags.py](webserver/scripts/test_gemini_tags.py) automatically loads [webserver/.env](webserver/.env) when present, without overriding environment variables already set in the shell. From the project root, run:
+
+```powershell
+python webserver/scripts/test_gemini_tags.py --url https://example.com
+```
+
+Manual title/description example:
+
+```powershell
+python webserver/scripts/test_gemini_tags.py --title "SQLite tips" --description "Practical notes for schema migrations"
 ```

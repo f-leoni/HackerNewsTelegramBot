@@ -516,6 +516,9 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                         this.bookmark.title = metadata.title || this.bookmark.title;
                         this.bookmark.description = metadata.description || this.bookmark.description;
                         this.bookmark.image_url = metadata.image_url || this.bookmark.image_url;
+                        if (Array.isArray(metadata.tags) && metadata.tags.length > 0) {{
+                            this.bookmark.tags = metadata.tags.join(', ');
+                        }}
                         showToast(window.TRANSLATIONS.toast_metadata_scraped_success || "Metadata scraped successfully!", false);
                     }} catch (error) {{
                         showToast(window.TRANSLATIONS.toast_error_scraping_metadata || "Error during metadata scraping.", true);

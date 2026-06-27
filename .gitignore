@@ -20,5 +20,6 @@ server.err
 *.session-journal
 *.bak
 *.pyc
+.env
 .vscode/
 __pycache__/
