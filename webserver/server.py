@@ -357,6 +357,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
     def handle_login(self):
         """Handles a login attempt from a POST request."""
         try:
+            if not hasattr(self, 'nonce'):
+                self.nonce = secrets.token_hex(16)
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
             credentials = parse_qs(post_data.decode('utf-8'))
