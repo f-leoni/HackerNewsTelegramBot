@@ -48,13 +48,22 @@ def test_client(mocker):
     conn.commit()
 
     # 5. Define a helper function to simulate requests
-    def make_request(method, path, body=None, headers=None):
+    def make_request(method, path, body=None, headers=None, return_headers=False):
         if headers is None:
             headers = {}
 
         # Simulate the request environment
         request_line = f"{method} {path} HTTP/1.1"
-        rfile = BytesIO(json.dumps(body).encode('utf-8') if body else b'')
+        if body is None:
+            payload = b''
+        elif isinstance(body, (bytes, bytearray)):
+            payload = bytes(body)
+        elif isinstance(body, str):
+            payload = body.encode('utf-8')
+        else:
+            payload = json.dumps(body).encode('utf-8')
+
+        rfile = BytesIO(payload)
         wfile = BytesIO()
 
         # Mock the server and request objects that the handler expects
@@ -82,10 +91,17 @@ def test_client(mocker):
         # Capture and return the response
         status_code = handler.send_response.call_args[0][0]
         response_body = wfile.getvalue()
+        sent_headers = {}
+        for header_call in handler.send_header.call_args_list:
+            key, value = header_call[0]
+            sent_headers[key] = value
         try:
             response_json = json.loads(response_body)
         except (json.JSONDecodeError, UnicodeDecodeError):
             response_json = None
+
+        if return_headers:
+            return status_code, response_json, response_body.decode('utf-8'), sent_headers
 
         return status_code, response_json, response_body.decode('utf-8')
 
@@ -110,6 +126,22 @@ def test_authenticated_access_succeeds(test_client):
     headers = {'Cookie': f'session_id={session_id}'}
     status, _, _ = make_request('GET', '/', headers=headers)
     assert status == 200
+
+
+def test_login_is_case_insensitive_for_username(test_client):
+    """Username casing should not affect successful login."""
+    make_request, _, _, _ = test_client
+    body = 'username=TESTUSER&password=password123'
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': str(len(body)),
+    }
+
+    status, _, _, response_headers = make_request('POST', '/login', body=body, headers=headers, return_headers=True)
+
+    assert status == 302
+    assert response_headers.get('Location') == '/'
+    assert 'session_id=' in response_headers.get('Set-Cookie', '')
 
 
 # --- API Endpoint Tests ---
@@ -202,3 +234,52 @@ def test_update_bookmark_success(test_client):
     result = cursor.fetchone()
     assert result[0] == 'New Updated Title'
     assert result[1] == 1
+
+
+def test_export_html_success_headers_and_body(test_client):
+    """Tests HTML export endpoint returns attachment headers and expected body."""
+    make_request, session_id, user_id, conn = test_client
+    headers = {'Cookie': f'session_id={session_id}'}
+
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO bookmarks (id, user_id, url, title, description, domain, tags, is_read) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (111, user_id, 'https://export-test.example', 'Export Test Title', 'Export Description', 'export-test.example', '["tag1"]', 0),
+    )
+    conn.commit()
+
+    status, _, body, response_headers = make_request('GET', '/api/export/html', headers=headers, return_headers=True)
+
+    assert status == 200
+    assert response_headers.get('Content-Type', '').startswith('text/html')
+    assert 'attachment; filename="bookmarks.html"' in response_headers.get('Content-Disposition', '')
+    assert '<title>Bookmarks Export</title>' in body
+    assert '/static/export-page.css' in body
+    assert 'Export Test Title' in body
+
+
+def test_head_does_not_write_response_body(test_client):
+    """HEAD requests must return headers only, without a response body."""
+    make_request, session_id, _, _ = test_client
+    headers = {'Cookie': f'session_id={session_id}'}
+
+    status, response_json, body = make_request('HEAD', '/api/bookmarks', headers=headers)
+
+    assert status == 200
+    assert response_json is None
+    assert body == ''
+
+
+def test_scroll_endpoint_handles_malformed_query_params(test_client):
+    """Scroll endpoint should clamp/fallback invalid query params instead of failing."""
+    make_request, session_id, _, _ = test_client
+    headers = {'Cookie': f'session_id={session_id}'}
+
+    status, _, body = make_request(
+        'GET',
+        '/ui/bookmarks/scroll?offset=abc&limit=not-a-number&hide_read=definitely-not-bool',
+        headers=headers,
+    )
+
+    assert status == 200
+    assert 'loadMoreTrigger' in body

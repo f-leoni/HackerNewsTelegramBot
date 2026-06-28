@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import Mock
+from datetime import datetime
 
 # Import functions from htmldata.py
 from webserver.htmldata import (
@@ -8,7 +9,8 @@ from webserver.htmldata import (
     render_bookmark_compact_item,
     render_bookmarks,
     render_bookmarks_compact,
-    get_html
+    get_html,
+    build_export_html_document,
 )
 
 # --- Fixtures ---
@@ -149,3 +151,14 @@ def test_get_html_has_more_bookmarks(mock_handler, sample_translations):
     
     assert 'hx-trigger="revealed"' in html
     assert '>Loading...</div>' in html
+
+
+def test_build_export_html_document_includes_expected_wrapper():
+    generated_at = datetime(2026, 6, 28, 12, 30, 0)
+    html = build_export_html_document('<div>CONTENT</div>', total_count=3, generated_at=generated_at)
+
+    assert '<title>Bookmarks Export</title>' in html
+    assert '/static/export-page.css' in html
+    assert 'Total: 3 bookmarks' in html
+    assert '2026-06-28 12:30:00' in html
+    assert '<div>CONTENT</div>' in html

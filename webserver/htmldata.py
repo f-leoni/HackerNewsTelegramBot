@@ -257,6 +257,29 @@ def render_bookmarks_export(bookmarks, translations):
         return f"<p>{translations.get('no_bookmarks_found', 'No bookmarks found.')}</p>"
     return "".join(render_bookmark_card_export(b, translations) for b in bookmarks)
 
+
+def build_export_html_document(html_content, total_count, generated_at):
+    """Builds a complete HTML document for bookmark export."""
+    generated_at_text = generated_at.strftime('%Y-%m-%d %H:%M:%S')
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookmarks Export</title>
+    <link rel="stylesheet" href="/static/export-page.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📚 Bookmarks Export</h1>
+        <p class="export-info">Exported on {generated_at_text} | Total: {total_count} bookmarks</p>
+        <div class="bookmarks-container">
+            {html_content}
+        </div>
+    </div>
+</body>
+</html>"""
+
 def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, search_query=None, has_more=False):
     # HTML escape function to avoid issues with quotes in data
     def escape_html(text):
