@@ -145,8 +145,9 @@ def render_bookmark_compact_item(bookmark, translations):
 
     return f"""
     <div class="{class_attr}" data-id="{id}" data-is-read="{1 if is_read else 0}" id="bookmark-compact-{id}" data-bookmark-json="{bookmark_json_html}" hx-swap-oob="outerHTML">
-        <img src="{escape_html(image_url)}" alt="" class="compact-image">
-        <div class="image-placeholder" style="display:none;">🔗</div>
+        <div class="image-placeholder{'' if image_url else ' has-error'}">
+            {f'<img src="{escape_html(image_url)}" alt="" class="compact-image">' if image_url else ''}
+        </div>
         <div class="compact-content">
             <a href="{escape_html(url)}" target="_blank" class="compact-title" title="{escape_html(title)}">{escape_html(title)}</a>
             <span class="compact-domain">{escape_html(domain)}</span>
