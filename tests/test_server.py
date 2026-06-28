@@ -270,6 +270,18 @@ def test_head_does_not_write_response_body(test_client):
     assert body == ''
 
 
+def test_head_homepage_does_not_write_response_body(test_client):
+    """HEAD homepage must return headers only, without HTML body."""
+    make_request, session_id, _, _ = test_client
+    headers = {'Cookie': f'session_id={session_id}'}
+
+    status, response_json, body = make_request('HEAD', '/', headers=headers)
+
+    assert status == 200
+    assert response_json is None
+    assert body == ''
+
+
 def test_scroll_endpoint_handles_malformed_query_params(test_client):
     """Scroll endpoint should clamp/fallback invalid query params instead of failing."""
     make_request, session_id, _, _ = test_client
@@ -283,3 +295,25 @@ def test_scroll_endpoint_handles_malformed_query_params(test_client):
 
     assert status == 200
     assert 'loadMoreTrigger' in body
+
+
+def test_mark_read_rejects_invalid_json_body(test_client):
+    """mark_read endpoint should return 400 on malformed JSON payload."""
+    make_request, session_id, user_id, conn = test_client
+    headers = {
+        'Cookie': f'session_id={session_id}',
+        'Content-Type': 'application/json',
+    }
+
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO bookmarks (id, url, user_id, is_read) VALUES (?, ?, ?, ?)", (222, 'https://markread.example', user_id, 0))
+    conn.commit()
+
+    invalid_body = '{"is_read":'
+    headers['Content-Length'] = str(len(invalid_body))
+
+    status, response_json, _ = make_request('PUT', '/api/bookmarks/222/read', body=invalid_body, headers=headers)
+
+    assert status == 400
+    assert response_json is not None
+    assert response_json.get('error') == 'Invalid JSON body'

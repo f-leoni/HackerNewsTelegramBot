@@ -525,6 +525,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         # Load only the first "page" of unfiltered bookmarks for initial rendering
         # By default, it hides read items, but this can be overridden by client-side JS
         hide_read_default = True
+        current_user_id = self.get_current_user()
 
         # Determine language and load translations
         lang_code = self.get_user_language()
@@ -535,12 +536,12 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self.nonce = secrets.token_hex(16)
 
         # For initial load, fetch DEFAULT_PAGE_SIZE + 1 to check for more items
-        bookmarks_raw = self.get_bookmarks(self.get_current_user(), limit=DEFAULT_PAGE_SIZE + 1, offset=0, filter_type=None, hide_read=hide_read_default)
+        bookmarks_raw = self.get_bookmarks(current_user_id, limit=DEFAULT_PAGE_SIZE + 1, offset=0, filter_type=None, hide_read=hide_read_default)
         has_more = len(bookmarks_raw) > DEFAULT_PAGE_SIZE
         bookmarks_to_render = bookmarks_raw[:DEFAULT_PAGE_SIZE]
 
         # The total count always refers to all bookmarks in the DB
-        total_count_for_filters = self.get_total_bookmark_count(self.get_current_user(), filter_type=None, hide_read=hide_read_default, search_query=None) # Initial filter
+        total_count_for_filters = self.get_total_bookmark_count(current_user_id, filter_type=None, hide_read=hide_read_default, search_query=None) # Initial filter
         
         html = get_html(self, bookmarks_to_render, __version__, total_count_for_filters, translations, has_more=has_more)
 
@@ -555,7 +556,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         self.send_header('Set-Cookie', cookie.output(header='').lstrip())
 
         self.end_headers()
-        self.wfile.write(html.encode('utf-8'))
+        self._write_response_body(html.encode('utf-8'))
 
     def _send_json_response(self, status_code, data):
         """Helper to send JSON responses."""
@@ -612,7 +613,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 elif static_path.endswith('.svg'):
                     content_type = 'image/svg+xml'
                 else:
-                    content_type = 'application/octet-stream' # Fallback generico
+                    content_type = 'application/octet-stream' # Generic fallback
                 self.send_response(200)
                 self._send_security_headers()
                 self.send_header('Content-type', content_type)
@@ -644,34 +645,49 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         image_url, domain, saved_at, telegram_user_id, telegram_message_id,
         comments_url, is_read.
         """
-        bookmarks = self.get_bookmarks(self.get_current_user(), limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query, sort_order=sort_order)
+        user_id = self.get_current_user()
+        bookmarks = self.get_bookmarks(user_id, limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query, sort_order=sort_order)
 
-        bookmark_list = []
-        for bookmark in bookmarks:
-            bookmark_list.append({
-                'id': bookmark[0],
-                'url': bookmark[1],
-                'title': bookmark[2],
-                'description': bookmark[3],
-                'image_url': bookmark[4],
-                'domain': bookmark[5],
-                'saved_at': bookmark[6],
-                'telegram_user_id': bookmark[7],
-                'telegram_message_id': bookmark[8],
-                'comments_url': bookmark[9],
-                'tags': json.loads(bookmark[10]) if len(bookmark) > 10 and bookmark[10] else [],
-                'is_read': bookmark[11] if len(bookmark) > 11 else 0
-            })
+        bookmark_list = [self._bookmark_row_to_api_dict(bookmark) for bookmark in bookmarks]
 
         self._send_json_response(200, bookmark_list)
+
+    def _bookmark_row_to_api_dict(self, row):
+        """Converts a bookmark row tuple to API JSON shape."""
+        tags = []
+        if len(row) > 10 and row[10]:
+            if isinstance(row[10], str):
+                try:
+                    tags = json.loads(row[10])
+                except Exception:
+                    tags = []
+            else:
+                tags = row[10]
+
+        return {
+            'id': row[0],
+            'url': row[1],
+            'title': row[2],
+            'description': row[3],
+            'image_url': row[4],
+            'domain': row[5],
+            'saved_at': row[6],
+            'telegram_user_id': row[7],
+            'telegram_message_id': row[8],
+            'comments_url': row[9],
+            'tags': tags,
+            'is_read': row[11] if len(row) > 11 else 0,
+        }
 
     def serve_bookmarks_ui(self, search_query=None, hide_read=False, sort_order='desc', filter_type=None, limit=DEFAULT_PAGE_SIZE, offset=0):
         """
         API that returns bookmarks rendered as HTML fragments for htmx.
         This endpoint is used for initial loads (search, sort, filter) and returns full divs.
         """
+        user_id = self.get_current_user()
+
         # Fetch one more than the limit to check if there are more items
-        bookmarks_raw = self.get_bookmarks(self.get_current_user(), limit=limit + 1, offset=offset, search_query=search_query, hide_read=hide_read, sort_order=sort_order, filter_type=filter_type)
+        bookmarks_raw = self.get_bookmarks(user_id, limit=limit + 1, offset=offset, search_query=search_query, hide_read=hide_read, sort_order=sort_order, filter_type=filter_type)
         
         has_more = len(bookmarks_raw) > limit
         bookmarks_to_render = bookmarks_raw[:limit]
@@ -684,7 +700,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         rendered_compact = render_bookmarks_compact(bookmarks_to_render, translations)
 
         # Calculate total count for the current filters
-        total_count_for_filters = self.get_total_bookmark_count(self.get_current_user(), filter_type=filter_type, hide_read=hide_read, search_query=search_query)
+        total_count_for_filters = self.get_total_bookmark_count(user_id, filter_type=filter_type, hide_read=hide_read, search_query=search_query)
         
         # Build the "load more" trigger if there are more items
         load_more_trigger = self._build_load_more_trigger(
@@ -716,7 +732,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         limit = self._safe_int(limit, DEFAULT_PAGE_SIZE, min_value=1, max_value=1000)
         offset = self._safe_int(offset, 0, min_value=0, max_value=1_000_000)
         hide_read = self._parse_bool_param(hide_read, default=False)
-        bookmarks_raw = self.get_bookmarks(self.get_current_user(), limit=limit + 1, offset=offset, search_query=search_query, hide_read=hide_read, sort_order=sort_order, filter_type=filter_type)
+        user_id = self.get_current_user()
+        bookmarks_raw = self.get_bookmarks(user_id, limit=limit + 1, offset=offset, search_query=search_query, hide_read=hide_read, sort_order=sort_order, filter_type=filter_type)
         
         has_more = len(bookmarks_raw) > limit
         bookmarks_to_render = bookmarks_raw[:limit]
@@ -760,15 +777,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         """
         Exports all bookmarks for the current user to a CSV file.
         """
-        user_id = self.get_current_user()
-        if not user_id:
-            self._send_error_response(401, "Authentication required")
+        bookmarks = self._get_export_bookmarks()
+        if bookmarks is None:
             return
 
         try:
-            # Fetch all bookmarks without pagination
-            bookmarks = self.get_bookmarks(user_id, limit=-1)
-
             # Send headers for file download
             from io import StringIO
             # Use StringIO with newline='' as recommended by Python's csv module documentation
@@ -810,7 +823,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 export_kind='csv',
             )
         except Exception as e:
-            logger.error(f"Error exporting CSV for user {user_id}: {e}")
+            logger.error(f"Error exporting CSV: {e}")
             self._send_error_response(500, "Failed to export CSV")
 
     def _parse_tags_for_export(self, tags):
@@ -841,19 +854,23 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             'is_read': bool(row[11]),
         }
 
+    def _get_export_bookmarks(self):
+        """Returns all bookmarks for the authenticated user, or None if unauthorized."""
+        user_id = self.get_current_user()
+        if not user_id:
+            self._send_error_response(401, "Authentication required")
+            return None
+        return self.get_bookmarks(user_id, limit=-1)
+
     def serve_export_json(self):
         """
         Exports all bookmarks for the current user to a JSON file.
         """
-        user_id = self.get_current_user()
-        if not user_id:
-            self._send_error_response(401, "Authentication required")
+        bookmarks = self._get_export_bookmarks()
+        if bookmarks is None:
             return
 
         try:
-            # Fetch all bookmarks without pagination
-            bookmarks = self.get_bookmarks(user_id, limit=-1)
-
             # Convert bookmarks to a list of dictionaries for JSON export
             export_data = [self._bookmark_row_to_export_dict(row) for row in bookmarks]
 
@@ -865,22 +882,18 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 export_kind='json',
             )
         except Exception as e:
-            logger.error(f"Error exporting JSON for user {user_id}: {e}")
+            logger.error(f"Error exporting JSON: {e}")
             self._send_error_response(500, "Failed to export JSON")
 
     def serve_export_html(self):
         """
         Exports all bookmarks for the current user to an HTML file.
         """
-        user_id = self.get_current_user()
-        if not user_id:
-            self._send_error_response(401, "Authentication required")
+        bookmarks = self._get_export_bookmarks()
+        if bookmarks is None:
             return
 
         try:
-            # Fetch all bookmarks without pagination
-            bookmarks = self.get_bookmarks(user_id, limit=-1)
-
             bookmarks_for_rendering = [self._bookmark_row_to_export_dict(row) for row in bookmarks]
 
             # Get translations for the current user (we'll use English as default for export)
@@ -902,7 +915,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 export_kind='html',
             )
         except Exception as e:
-            logger.error(f"Error exporting HTML for user {user_id}: {e}")
+            logger.error(f"Error exporting HTML: {e}")
             self._send_error_response(500, "Failed to export HTML")
 
     def delete_bookmark(self, bookmark_id):
@@ -910,8 +923,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         Deletes a bookmark from the database given its `bookmark_id`.
 
         Responds with JSON:
-          - 200 {"status": "deleted"} in caso di successo
-          - 500 {"error": "..."} in caso di errore
+                    - 200 {"status": "deleted"} on success
+                    - 500 {"error": "..."} on error
 
         Opens an SQLite connection, executes DELETE, and closes the connection.
         """
@@ -1095,14 +1108,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 self._send_html_response(200, html_response, extra_headers={'HX-Trigger': 'bookmark-updated'})
             else:
                 # For non-htmx requests, return JSON as before
-                # Map tags from JSON string to Python list if present
-                ub_cols = ['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'tags', 'is_read']
-                updated_bookmark = dict(zip(ub_cols, updated_bookmark_tuple))
-                if isinstance(updated_bookmark.get('tags'), str) and updated_bookmark.get('tags'):
-                    try:
-                        updated_bookmark['tags'] = json.loads(updated_bookmark['tags'])
-                    except Exception:
-                        updated_bookmark['tags'] = []
+                updated_bookmark = self._bookmark_row_to_api_dict(updated_bookmark_tuple)
                 self._send_json_response(200, updated_bookmark)
         except sqlite3.IntegrityError as e:
             # Provide a more specific error message if possible
@@ -1130,16 +1136,24 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             is_read = 1
             if content_length > 0:
                 post_data = self.rfile.read(content_length)
-                data = json.loads(post_data.decode('utf-8'))
+                try:
+                    data = json.loads(post_data.decode('utf-8'))
+                except json.JSONDecodeError:
+                    self._send_error_response(400, "Invalid JSON body")
+                    return
                 if 'is_read' in data:
                     is_read = 1 if data.get('is_read') else 0
 
+            user_id = self.get_current_user()
             with db_connection() as cursor:
-                cursor.execute("UPDATE bookmarks SET is_read = ? WHERE id = ? AND user_id = ?", (int(is_read), bookmark_id, self.get_current_user()))
+                cursor.execute("UPDATE bookmarks SET is_read = ? WHERE id = ? AND user_id = ?", (int(is_read), bookmark_id, user_id))
             self._send_json_response(200, {'status': 'ok', 'is_read': is_read})
 
         except sqlite3.Error as e:
             self._send_error_response(500, str(e))
+        except Exception as e:
+            logger.error(f"Error marking bookmark {bookmark_id} as read: {e}")
+            self._send_error_response(500, "An internal error occurred")
 
     def add_bookmark(self):
         """
@@ -1243,13 +1257,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 self._send_error_response(500, "Failed to retrieve newly created bookmark")
                 return
 
-            nb_cols = ['id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'tags', 'is_read']
-            new_bookmark = dict(zip(nb_cols, new_bookmark_tuple))
-            if isinstance(new_bookmark.get('tags'), str) and new_bookmark.get('tags'):
-                try:
-                    new_bookmark['tags'] = json.loads(new_bookmark['tags'])
-                except Exception:
-                    new_bookmark['tags'] = []
+            new_bookmark = self._bookmark_row_to_api_dict(new_bookmark_tuple)
             self._send_json_response(201, new_bookmark)
 
         except ValueError as e:
@@ -1390,7 +1398,7 @@ def create_self_signed_cert(cert_file_path, key_file_path):
         logger.info(f"Existing certificates found: {cert_file_path}, {key_file_path}")
         return
 
-    logger.info("Creazione certificato self-signed con chiave RSA 2048-bit...")
+    logger.info("Creating self-signed certificate with 2048-bit RSA key...")
 
     try:
         # First, generate the 2048-bit RSA private key
@@ -1462,7 +1470,7 @@ def main():
         # --- HTTPS Mode ---
         protocol = "https"
         le_domain = os.getenv('LE_DOMAIN', None)
-        logger.info(f"LE_DOMAIN letto come '{le_domain}'")
+        logger.info(f"LE_DOMAIN read as '{le_domain}'")
 
         if le_domain:
             le_cert_dir = f'/etc/letsencrypt/live/{le_domain}'
@@ -1496,7 +1504,7 @@ def main():
             httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
             logger.info(f"🔒 Certificate: {os.path.abspath(cert_file)}")
         except ssl.SSLError as e:
-            logger.error(f"❌ Errore SSL: {e}")
+            logger.error(f"❌ SSL error: {e}")
             return
     else:
         # --- HTTP Mode (Default) ---
