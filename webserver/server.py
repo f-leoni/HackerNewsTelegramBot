@@ -169,11 +169,14 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         )
         self.send_header('Content-Security-Policy', csp)
 
-    def _redirect(self, path):
+    def _redirect(self, path, extra_headers=None):
         """Sends a 302 redirect response."""
         self.send_response(302)
         self._send_security_headers()
         self.send_header('Location', path)
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
         self.end_headers()
 
     def _send_html_response(self, status_code, html_content, extra_headers=None):
@@ -278,6 +281,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         """Handles OPTIONS pre-flight requests for CORS."""
         self.send_response(204) # No Content
+        self._send_security_headers()
         self.send_header('Access-Control-Allow-Origin', '*') # Or be more restrictive
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
@@ -460,7 +464,24 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         try:
             if not hasattr(self, 'nonce'):
                 self.nonce = secrets.token_hex(16)
-            content_length = int(self.headers['Content-Length'])
+
+            malformed_request_error = "Invalid login request."
+
+            raw_content_length = self.headers.get('Content-Length', '0')
+            try:
+                content_length = int(raw_content_length)
+            except (TypeError, ValueError):
+                self._send_html_response(400, get_login_page(self, error=malformed_request_error))
+                return
+
+            if content_length < 0:
+                self._send_html_response(400, get_login_page(self, error=malformed_request_error))
+                return
+
+            if content_length == 0:
+                self._send_html_response(400, get_login_page(self, error=malformed_request_error))
+                return
+
             post_data = self.rfile.read(content_length)
             credentials = parse_qs(post_data.decode('utf-8'))
 
@@ -482,14 +503,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                         (session_id, user[0], expires_at)
                     )
 
-                self.send_response(302)
-                self.send_header('Location', '/')
                 cookie = SimpleCookie()
                 cookie['session_id'] = session_id
                 cookie['session_id']['path'] = '/'
                 cookie['session_id']['expires'] = expires_at.strftime("%a, %d %b %Y %H:%M:%S GMT")
-                self.send_header('Set-Cookie', cookie.output(header='').lstrip())
-                self.end_headers()
+                self._redirect('/', extra_headers={'Set-Cookie': cookie.output(header='').lstrip()})
             else:
                 self._send_html_response(401, get_login_page(self, error="Invalid credentials."))
 

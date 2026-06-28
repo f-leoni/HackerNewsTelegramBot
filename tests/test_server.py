@@ -144,6 +144,48 @@ def test_login_is_case_insensitive_for_username(test_client):
     assert 'session_id=' in response_headers.get('Set-Cookie', '')
 
 
+def test_login_missing_content_length_returns_400(test_client):
+    """Login without Content-Length should return 400, not 500."""
+    make_request, _, _, _ = test_client
+    body = 'username=testuser&password=password123'
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+    }
+
+    status, _, response_body = make_request('POST', '/login', body=body, headers=headers)
+
+    assert status == 400
+    assert 'Invalid login request.' in response_body
+
+
+def test_login_invalid_content_length_returns_400(test_client):
+    """Login with invalid Content-Length should return 400, not 500."""
+    make_request, _, _, _ = test_client
+    body = 'username=testuser&password=password123'
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': 'not-a-number',
+    }
+
+    status, _, response_body = make_request('POST', '/login', body=body, headers=headers)
+
+    assert status == 400
+    assert 'Invalid login request.' in response_body
+
+
+def test_options_includes_security_and_cors_headers(test_client):
+    """OPTIONS response should include both CORS and security headers."""
+    make_request, _, _, _ = test_client
+
+    status, _, _, response_headers = make_request('OPTIONS', '/api/bookmarks', return_headers=True)
+
+    assert status == 204
+    assert response_headers.get('Access-Control-Allow-Origin') == '*'
+    assert response_headers.get('Access-Control-Allow-Methods') == 'GET, POST, PUT, DELETE, OPTIONS'
+    assert response_headers.get('Access-Control-Allow-Headers') == 'Content-Type, Authorization'
+    assert 'Content-Security-Policy' in response_headers
+
+
 # --- API Endpoint Tests ---
 
 def test_add_bookmark_success(test_client):
