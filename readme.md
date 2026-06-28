@@ -54,7 +54,7 @@ Il bot ha bisogno di un utente del webserver a cui associare i bookmark. Esegui 
 
 2.  Esegui lo script e segui le istruzioni per creare un utente. **Assicurati che il nome utente corrisponda a `WEB_USERNAME`** impostato nel file `.env` del bot.
     ```bash
-    python add_user.py
+    python scripts/add_user.py
     ```
 
 ### 2. Avvio dell'Applicazione
@@ -151,7 +151,7 @@ WEB_USERNAME=my_web_user
 # Install dependency (for this script only)
 pip install werkzeug
 # Run the script and follow the prompts
-python add_user.py
+python scripts/add_user.py
 ```
 
 ### 2. Run the Application

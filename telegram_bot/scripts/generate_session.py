@@ -6,7 +6,7 @@ which can sometimes cause the Telegram auth flow to fail with low-level errors
 like: "'BadMsgNotification' object has no attribute 'type'".
 
 Usage:
-  pwsh> python telegram_bot/generate_session.py
+    pwsh> python telegram_bot/scripts/generate_session.py
 
 This script will:
 - load API_ID and API_HASH from the local `.env` inside `telegram_bot/` (or from parent)

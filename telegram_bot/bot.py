@@ -4,12 +4,20 @@ Main module of the Telegram bot for saving bookmarks.
 import os
 import sys
 import re
+import json
 import sqlite3
 from pyrogram import Client, filters
 from datetime import datetime
 from urllib.parse import urlparse
+
+# Ensure project root is importable when launched as a script (e.g. under systemd)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from shared.database import init_database, get_db_path
-from shared.utils import get_article_metadata
+from shared.utils import get_article_metadata, generate_tags_llm
 import logging
 
 # Setup logging
@@ -193,6 +201,12 @@ class BookmarkBot:
             cursor = conn.cursor()
             from_user_id = getattr(message.from_user, "id", None)
             comments_url = comments_url_override if comments_url_override is not None else self.get_hn_comments_url(url)
+            tags = generate_tags_llm(
+                metadata.get("title", ""),
+                metadata.get("description", ""),
+                metadata.get("domain", ""),
+            )
+            metadata["tags"] = tags
 
             # Retrieve the ID of the first webserver user to associate the bookmark
             cursor.execute("SELECT id FROM users ORDER BY id LIMIT 1")
@@ -206,8 +220,8 @@ class BookmarkBot:
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO bookmarks 
-                (user_id, url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (user_id, url, title, description, image_url, domain, tags, telegram_user_id, telegram_message_id, comments_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     web_user_id,
@@ -216,6 +230,7 @@ class BookmarkBot:
                     metadata["description"],
                     metadata["image_url"],
                     metadata["domain"],
+                    json.dumps(tags, ensure_ascii=False),
                     from_user_id,
                     message.id,
                     comments_url,
@@ -426,7 +441,10 @@ class BookmarkBot:
                 # If saving is successful, send the reply and exit
                 # to avoid processing the links individually.
                 if success:
-                    await message.reply(f"📖 **HN Bookmark saved!**\n📰 {metadata['title']}\n🔗 {metadata['domain']}")
+                    tags_line = f"\n🏷️ {', '.join(metadata.get('tags', []))}" if metadata.get('tags') else ""
+                    await message.reply(
+                        f"📖 **HN Bookmark saved!**\n📰 {metadata['title']}\n🔗 {metadata['domain']}{tags_line}"
+                    )
                     return # We are done, exit the function
 
             # Previous logic for all other cases (single or multiple non-HN links)
@@ -445,9 +463,15 @@ class BookmarkBot:
                 logger.info(f"---> Successfully saved {saved_count} bookmarks. Sending reply.")
                 if saved_count == 1:
                     meta = saved_metadata[0]
-                    reply_text = f"📖 **Bookmark saved!**\n📰 {meta['title']}\n🔗 {meta['domain']}"
+                    tags_line = f"\n🏷️ {', '.join(meta.get('tags', []))}" if meta.get('tags') else ""
+                    reply_text = f"📖 **Bookmark saved!**\n📰 {meta['title']}\n🔗 {meta['domain']}{tags_line}"
                 else:
-                    reply_text = f"📖 **Saved {saved_count} bookmarks!**"
+                    tags_summary = []
+                    for meta in saved_metadata:
+                        if meta.get('tags'):
+                            tags_summary.append(f"- {meta.get('domain', 'link')}: {', '.join(meta['tags'])}")
+                    tags_block = "\n🏷️ Tags:\n" + "\n".join(tags_summary) if tags_summary else ""
+                    reply_text = f"📖 **Saved {saved_count} bookmarks!**{tags_block}"
                 await message.reply(reply_text)
         else:
             logger.info("--> No URL found in the message. End of processing.")
@@ -517,10 +541,14 @@ class BookmarkBot:
 
 
 if __name__ == "__main__":
-    bot = BookmarkBot()
+    try:
+        bot = BookmarkBot()
 
-    # Export existing bookmarks (optional)
-    # bot.export_bookmarks_html()
+        # Export existing bookmarks (optional)
+        # bot.export_bookmarks_html()
 
-    # Start the bot
-    bot.run()
+        # Start the bot
+        bot.run()
+    except Exception:
+        logger.exception("Fatal startup error in Telegram bot")
+        raise

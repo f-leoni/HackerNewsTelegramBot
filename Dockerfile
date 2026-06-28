@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir -r bot-requirements.txt -r shared-requirements.tx
 # Copy the source code of the bot and the shared library
 COPY telegram_bot/ /app/telegram_bot/
 COPY shared/ /app/shared/
-COPY migrate_bookmarks.py .
+COPY scripts/migrate_bookmarks.py /app/scripts/migrate_bookmarks.py
 
 # Default command to start the bot
 CMD ["python3", "-m", "telegram_bot.bot"]

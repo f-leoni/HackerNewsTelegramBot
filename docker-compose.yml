@@ -48,7 +48,7 @@ services:
       context: .
       # Specify to use the same Dockerfile as the bot
       dockerfile: Dockerfile
-    command: python3 migrate_bookmarks.py
+    command: python3 scripts/migrate_bookmarks.py
     volumes: # The initialization service must also see the same DB
       - ./shared/db:/app/shared/db
 

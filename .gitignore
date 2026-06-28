@@ -23,3 +23,5 @@ server.err
 .env
 .vscode/
 __pycache__/
+.pytest_cache/
+archive/
