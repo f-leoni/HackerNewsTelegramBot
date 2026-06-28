@@ -169,13 +169,90 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         self.send_header('Location', path)
         self.end_headers()
 
-    def _send_html_response(self, status_code, html_content):
+    def _send_html_response(self, status_code, html_content, extra_headers=None):
         """Helper to send HTML responses."""
         self.send_response(status_code)
         self._send_security_headers()
         self.send_header('Content-type', 'text/html; charset=utf-8')
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
         self.end_headers()
         self.wfile.write(html_content.encode('utf-8'))
+
+    def _safe_int(self, raw_value, default, min_value=0, max_value=1000):
+        """Parses an integer safely and clamps it to a sane range."""
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return default
+
+        if value < min_value:
+            return min_value
+        if value > max_value:
+            return max_value
+        return value
+
+    def _parse_bool_param(self, raw_value, default=False):
+        """Parses common boolean query/body-like values."""
+        if raw_value is None:
+            return default
+        if isinstance(raw_value, bool):
+            return raw_value
+        return str(raw_value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+    def _parse_bookmark_query_params(self):
+        """Centralized parsing for bookmark list query parameters."""
+        query_components = parse_qs(urlparse(self.path).query)
+
+        sort_order = query_components.get('sort_order', ['desc'])[0].lower()
+        if sort_order not in ('asc', 'desc'):
+            sort_order = 'desc'
+
+        return {
+            'limit': self._safe_int(query_components.get('limit', [DEFAULT_PAGE_SIZE])[0], DEFAULT_PAGE_SIZE),
+            'offset': self._safe_int(query_components.get('offset', [0])[0], 0),
+            'filter_type': query_components.get('filter_type', [None])[0],
+            'search_query': query_components.get('search_query', [None])[0],
+            'hide_read': self._parse_bool_param(query_components.get('hide_read', ['false'])[0], default=False),
+            'sort_order': sort_order,
+        }
+
+    def _escape_html_attr(self, value):
+        """Escapes a value for safe insertion into an HTML attribute."""
+        if value is None:
+            return ''
+        return str(value).replace('&', '&amp;').replace('"', '&quot;').replace("'", '&#39;').replace('<', '&lt;').replace('>', '&gt;')
+
+    def _build_load_more_trigger(self, has_more, translations, offset, limit, sort_order, search_query, hide_read, filter_type):
+        """Renders the shared HTMX trigger for infinite scrolling."""
+        if has_more:
+            next_offset = offset + limit
+            vals = {
+                'offset': next_offset,
+                'limit': limit,
+                'sort_order': sort_order,
+                'search_query': search_query or '',
+                'hide_read': bool(hide_read),
+                'filter_type': filter_type or '',
+            }
+            vals_json = self._escape_html_attr(json.dumps(vals, ensure_ascii=False))
+            return f"""
+            <div id="loadMoreTrigger" hx-get="/ui/bookmarks/scroll"
+                 hx-trigger="revealed"
+                 hx-swap="outerHTML"
+                 hx-indicator="#loadingIndicator"
+                 hx-vals="{vals_json}"
+                 class="load-more-trigger">
+                {translations.get('loading', 'Loading more bookmarks...')}
+            </div>
+            """
+
+        return f"""
+        <div id="loadMoreTrigger" class="load-more-trigger no-more-items">
+            {translations.get('all_bookmarks_loaded', 'All bookmarks have been loaded.')}
+        </div>
+        """
 
     def do_AUTHHEAD(self):
         """Dummy method to handle non-standard authentication requests."""
@@ -235,14 +312,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         if path == '/':
             self.serve_homepage()
         elif path == '/api/bookmarks':
-            query_components = parse_qs(urlparse(self.path).query)
-            limit = int(query_components.get("limit", [DEFAULT_PAGE_SIZE])[0])
-            offset = int(query_components.get("offset", [0])[0])
-            filter_type = query_components.get("filter_type", [None])[0]
-            search_query = query_components.get("search_query", [None])[0]
-            hide_read = query_components.get("hide_read", ['false'])[0].lower() == 'true'
-            sort_order = query_components.get("sort_order", ['desc'])[0].lower()
-            self.serve_bookmarks_api(limit=limit, offset=offset, filter_type=filter_type, hide_read=hide_read, search_query=search_query, sort_order=sort_order)
+            params = self._parse_bookmark_query_params()
+            self.serve_bookmarks_api(**params)
         elif path == '/api/export/csv':
             self.serve_export_csv()
         elif path == '/api/export/json':
@@ -250,24 +321,11 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         elif path == '/api/export/html':
             self.serve_export_html()
         elif path == '/ui/bookmarks': # Exact path match
-            query_components = parse_qs(urlparse(self.path).query)
-            search_query = query_components.get("search_query", [None])[0]
-            hide_read = query_components.get("hide_read", ['false'])[0].lower() == 'true'
-            sort_order = query_components.get("sort_order", ['desc'])[0].lower()
-            filter_type = query_components.get("filter_type", [None])[0]
-            limit = int(query_components.get("limit", [DEFAULT_PAGE_SIZE])[0])
-            offset = int(query_components.get("offset", [0])[0])
-            self.serve_bookmarks_ui(search_query=search_query, hide_read=hide_read, sort_order=sort_order, filter_type=filter_type, limit=limit, offset=offset)
+            params = self._parse_bookmark_query_params()
+            self.serve_bookmarks_ui(**params)
         elif path == '/ui/bookmarks/scroll':  # New endpoint for infinite scrolling
-            query_components = parse_qs(urlparse(self.path).query)
-            # Ensure correct types from query string
-            limit = int(query_components.get('limit', [DEFAULT_PAGE_SIZE])[0])
-            offset = int(query_components.get('offset', [0])[0])
-            hide_read = str(query_components.get('hide_read', ['false'])[0]).lower() == 'true'
-            search_query = query_components.get('search_query', [None])[0]
-            sort_order = query_components.get('sort_order', ['desc'])[0]
-            filter_type = query_components.get('filter_type', [None])[0]
-            self.serve_bookmarks_scroll_ui(search_query=search_query, hide_read=hide_read, sort_order=sort_order, filter_type=filter_type, limit=limit, offset=offset)
+            params = self._parse_bookmark_query_params()
+            self.serve_bookmarks_scroll_ui(**params)
         elif path == '/favicon.ico':
             self.path = '/static/img/favicon.svg' # Redirect the standard request to our SVG
             self.serve_static_file()
@@ -588,25 +646,16 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         total_count_for_filters = self.get_total_bookmark_count(self.get_current_user(), filter_type=filter_type, hide_read=hide_read, search_query=search_query)
         
         # Build the "load more" trigger if there are more items
-        load_more_trigger = ""
-        if has_more:
-            next_offset = offset + len(bookmarks_to_render)
-            load_more_trigger = f"""
-            <div id="loadMoreTrigger" hx-get="/ui/bookmarks/scroll"
-                 hx-trigger="revealed"
-                 hx-swap="outerHTML"
-                 hx-indicator="#loadingIndicator"
-                 :hx-vals="safeJsonStringify({{'offset': {next_offset}, 'limit': {limit}, 'sort_order': '{sort_order}', 'search_query': '{search_query or ''}', 'hide_read': {str(hide_read).lower()}, 'filter_type': '{filter_type or ''}'}})"
-                 class="load-more-trigger">
-                {translations.get('loading', 'Loading more bookmarks...')}
-            </div>
-            """
-        else:
-            load_more_trigger = f"""
-            <div id="loadMoreTrigger" class="load-more-trigger no-more-items">
-                {translations.get('all_bookmarks_loaded', 'All bookmarks have been loaded.')}
-            </div>
-            """
+        load_more_trigger = self._build_load_more_trigger(
+            has_more=has_more,
+            translations=translations,
+            offset=offset,
+            limit=len(bookmarks_to_render),
+            sort_order=sort_order,
+            search_query=search_query,
+            hide_read=hide_read,
+            filter_type=filter_type,
+        )
 
         html_response = f"""
         <div id="bookmarksGrid" class="bookmarks-grid" hx-swap-oob="innerHTML">{rendered_cards}</div>
@@ -639,26 +688,17 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         rendered_compact = render_bookmarks_compact(bookmarks_to_render, translations)
 
         # Build the "load more" trigger for the next page
-        load_more_trigger = ""
         current_total = offset + len(bookmarks_to_render)
-        if has_more:
-            next_offset = offset + len(bookmarks_to_render)
-            load_more_trigger = f"""
-            <div id="loadMoreTrigger" hx-get="/ui/bookmarks/scroll"
-                 hx-trigger="revealed"
-                 hx-swap="outerHTML"
-                 hx-indicator="#loadingIndicator"
-                 :hx-vals="safeJsonStringify({{'offset': {next_offset}, 'limit': {limit}, 'sort_order': '{sort_order}', 'search_query': '{search_query or ''}', 'hide_read': {str(hide_read).lower()}, 'filter_type': '{filter_type or ''}'}})"
-                 class="load-more-trigger">
-                {translations.get('loading', 'Loading more bookmarks...')}
-            </div>
-            """
-        else:
-            load_more_trigger = f"""
-            <div id="loadMoreTrigger" class="load-more-trigger no-more-items">
-                {translations.get('all_bookmarks_loaded', 'All bookmarks have been loaded.')}
-            </div>
-            """
+        load_more_trigger = self._build_load_more_trigger(
+            has_more=has_more,
+            translations=translations,
+            offset=offset,
+            limit=len(bookmarks_to_render),
+            sort_order=sort_order,
+            search_query=search_query,
+            hide_read=hide_read,
+            filter_type=filter_type,
+        )
 
         # When scrolling, we append the new items to their containers
         # and replace the trigger with the next one.
@@ -684,6 +724,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self._send_error_response(401, "Authentication required")
             return
 
+        headers_sent = False
         try:
             # Fetch all bookmarks without pagination
             bookmarks = self.get_bookmarks(user_id, limit=-1)
@@ -724,6 +765,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             csv_data = output.getvalue().encode('utf-8')
             
             self.send_response(200)
+            headers_sent = True
             self._send_security_headers()
             self.send_header('Content-Type', 'text/csv; charset=utf-8')
             self.send_header('Content-Disposition', 'attachment; filename="bookmarks.csv"')
@@ -732,7 +774,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self.wfile.write(csv_data)
         except Exception as e:
             logger.error(f"Error exporting CSV for user {user_id}: {e}")
-            # Cannot send error response if headers are already sent
+            if not headers_sent:
+                self._send_error_response(500, "Failed to export CSV")
 
     def serve_export_json(self):
         """
@@ -743,6 +786,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self._send_error_response(401, "Authentication required")
             return
 
+        headers_sent = False
         try:
             # Fetch all bookmarks without pagination
             bookmarks = self.get_bookmarks(user_id, limit=-1)
@@ -780,6 +824,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             json_data = json.dumps(export_data, indent=2, ensure_ascii=False).encode('utf-8')
             
             self.send_response(200)
+            headers_sent = True
             self._send_security_headers()
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Disposition', 'attachment; filename="bookmarks.json"')
@@ -788,7 +833,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self.wfile.write(json_data)
         except Exception as e:
             logger.error(f"Error exporting JSON for user {user_id}: {e}")
-            # Cannot send error response if headers are already sent
+            if not headers_sent:
+                self._send_error_response(500, "Failed to export JSON")
 
     def serve_export_html(self):
         """
@@ -799,6 +845,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self._send_error_response(401, "Authentication required")
             return
 
+        headers_sent = False
         try:
             # Fetch all bookmarks without pagination
             bookmarks = self.get_bookmarks(user_id, limit=-1)
@@ -1086,6 +1133,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             html_data = full_html.encode('utf-8')
             
             self.send_response(200)
+            headers_sent = True
             self._send_security_headers()
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Content-Disposition', 'attachment; filename="bookmarks.html"')
@@ -1094,7 +1142,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self.wfile.write(html_data)
         except Exception as e:
             logger.error(f"Error exporting HTML for user {user_id}: {e}")
-            # Cannot send error response if headers are already sent
+            if not headers_sent:
+                self._send_error_response(500, "Failed to export HTML")
 
     def delete_bookmark(self, bookmark_id):
         """
@@ -1283,9 +1332,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 {rendered_card}
                 {rendered_compact}
                 """
-                self.send_response(200)
-                self.send_header('HX-Trigger', 'bookmark-updated') # Trigger a client-side event
-                self._send_html_response(200, html_response)
+                self._send_html_response(200, html_response, extra_headers={'HX-Trigger': 'bookmark-updated'})
             else:
                 # For non-htmx requests, return JSON as before
                 # Map tags from JSON string to Python list if present
@@ -1457,6 +1504,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         """
         Scrapes metadata from a URL provided in the request body.
         """
+        url_for_log = ''
         try:
             content_length = int(self.headers.get('Content-Length', 0))
             if content_length == 0:
@@ -1464,8 +1512,13 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 return
 
             post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+            except json.JSONDecodeError:
+                self._send_error_response(400, "Invalid JSON body")
+                return
             url = data.get('url')
+            url_for_log = url or ''
 
             if not url:
                 self._send_error_response(400, "URL is required")
@@ -1487,7 +1540,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self._send_json_response(200, metadata)
 
         except Exception as e:
-            logger.error(f"Error scraping metadata for URL {data.get('url', '')}: {e}")
+            logger.error("Error scraping metadata for URL %s: %s", url_for_log, e)
             self._send_error_response(500, "Failed to scrape metadata")
 
     def get_total_bookmark_count(self, user_id, filter_type=None, hide_read=False, search_query=None):
