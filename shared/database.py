@@ -62,6 +62,7 @@ def init_database(conn=None):
             telegram_message_id INTEGER,
             comments_url TEXT,
             is_read INTEGER DEFAULT 0,
+            rating INTEGER DEFAULT 0,
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
             UNIQUE(user_id, url)
         )
@@ -72,7 +73,8 @@ def init_database(conn=None):
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user'))
         )
     """)
 
@@ -82,6 +84,30 @@ def init_database(conn=None):
             session_id TEXT PRIMARY KEY,
             user_id INTEGER NOT NULL,
             expires_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    # Create the telegram links table (1:1 between web user and Telegram user)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_user_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL UNIQUE,
+            telegram_user_id INTEGER NOT NULL UNIQUE,
+            linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    # Create one-time token table used for Telegram account linking
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            used_at TIMESTAMP,
+            used_telegram_user_id INTEGER,
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         )
     """)
@@ -98,8 +124,54 @@ def init_database(conn=None):
             cursor.execute("ALTER TABLE bookmarks ADD COLUMN tags TEXT")
         if "is_read" not in columns:
             cursor.execute("ALTER TABLE bookmarks ADD COLUMN is_read INTEGER DEFAULT 0")
+        if "rating" not in columns:
+            cursor.execute("ALTER TABLE bookmarks ADD COLUMN rating INTEGER DEFAULT 0")
         if "user_id" not in columns:
             cursor.execute("ALTER TABLE bookmarks ADD COLUMN user_id INTEGER")
+
+        cursor.execute("PRAGMA table_info(users)")
+        user_columns = [col[1] for col in cursor.fetchall()]
+        if "role" not in user_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+
+        cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'telegram_user_links'")
+        if cursor.fetchone() is None:
+            cursor.execute("""
+                CREATE TABLE telegram_user_links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL UNIQUE,
+                    telegram_user_id INTEGER NOT NULL UNIQUE,
+                    linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+                )
+            """)
+
+        cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'telegram_link_tokens'")
+        if cursor.fetchone() is None:
+            cursor.execute("""
+                CREATE TABLE telegram_link_tokens (
+                    token TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    expires_at TIMESTAMP NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    used_at TIMESTAMP,
+                    used_telegram_user_id INTEGER,
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+                )
+            """)
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_telegram_link_tokens_user_id ON telegram_link_tokens(user_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_telegram_link_tokens_expires_at ON telegram_link_tokens(expires_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_telegram_user_links_telegram_user_id ON telegram_user_links(telegram_user_id)")
+
+        cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'")
+        admin_count = cursor.fetchone()[0]
+        if admin_count == 0:
+            # Bootstrap: promote the oldest user to admin when no admin exists.
+            cursor.execute("SELECT id FROM users ORDER BY id ASC LIMIT 1")
+            first_user = cursor.fetchone()
+            if first_user:
+                cursor.execute("UPDATE users SET role = 'admin' WHERE id = ?", (first_user[0],))
     except Exception as e:
         logger.warning("Could not perform database migration: %s", e)
 

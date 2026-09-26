@@ -74,6 +74,10 @@ def db_for_bot(mocker):
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO users (id, username, password_hash) VALUES (?, ?, ?)",
                    (1, 'webuser', 'somehash'))
+    cursor.execute(
+        "INSERT OR REPLACE INTO telegram_user_links (user_id, telegram_user_id) VALUES (?, ?)",
+        (1, 12345)
+    )
     conn.commit()
 
     yield conn

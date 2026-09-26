@@ -25,3 +25,4 @@ server.err
 __pycache__/
 .pytest_cache/
 archive/
+plan*

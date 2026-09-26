@@ -39,6 +39,385 @@ def get_login_page(self, error=None):
 </html>
 """
 
+
+def get_user_management_page(self, translations=None):
+    """Generates the HTML page for web-based user management."""
+    if translations is None:
+        translations = {}
+
+    return f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{translations.get('users_page_title', 'User Management')}</title>
+    <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+    <link rel="alternate icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/static/img/favicon.svg">
+    <link rel="stylesheet" href="/static/style.css">
+    <style nonce="{self.nonce}">
+        .users-actions {{
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }}
+
+        .users-card {{
+            background: #fff;
+            border: 1px solid #e6e8ef;
+            border-radius: 10px;
+            padding: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+        }}
+
+        .users-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }}
+
+        .users-grid .full {{
+            grid-column: 1 / -1;
+        }}
+
+        .users-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+            background: #fff;
+            border-radius: 10px;
+            overflow: hidden;
+        }}
+
+        .users-table th,
+        .users-table td {{
+            padding: 10px 12px;
+            border-bottom: 1px solid #edf0f5;
+            text-align: left;
+        }}
+
+        .users-table th {{
+            background: #f7f9fc;
+            font-weight: 700;
+        }}
+
+        .users-table tr:last-child td {{
+            border-bottom: none;
+        }}
+
+        .inline-actions {{
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }}
+
+        .inline-actions .btn {{
+            padding: 6px 10px;
+            font-size: 12px;
+        }}
+
+        .btn-danger {{
+            background: #c62828;
+        }}
+
+        .btn-danger:hover {{
+            background: #9a1f1f;
+        }}
+
+        .status-msg {{
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+        }}
+
+        .status-msg.ok {{
+            display: block;
+            background: #e8f7ee;
+            color: #136c3c;
+        }}
+
+        .status-msg.err {{
+            display: block;
+            background: #fdecea;
+            color: #8d1d17;
+        }}
+
+        .mono {{
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 12px;
+        }}
+
+        @media (max-width: 820px) {{
+            .users-grid {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{translations.get('users_header', 'User Management')}</h1>
+
+        <div class="users-actions">
+            <a href="/" class="btn">{translations.get('back_to_bookmarks', 'Back to Bookmarks')}</a>
+            <a href="/logout" class="btn btn-secondary">{translations.get('logout', 'Logout')}</a>
+        </div>
+
+        <div class="users-card">
+            <h3>{translations.get('create_user', 'Create New User')}</h3>
+            <form id="createUserForm" class="users-grid">
+                <div>
+                    <label for="newUsername">{translations.get('username', 'Username')}</label>
+                    <input id="newUsername" type="text" required minlength="3" maxlength="64">
+                </div>
+                <div>
+                    <label for="newPassword">{translations.get('password', 'Password')}</label>
+                    <input id="newPassword" type="password" required minlength="6">
+                </div>
+                <div>
+                    <label for="newRole">{translations.get('role', 'Role')}</label>
+                    <select id="newRole">
+                        <option value="user">{translations.get('role_user', 'User')}</option>
+                        <option value="admin">{translations.get('role_admin', 'Admin')}</option>
+                    </select>
+                </div>
+                <div class="full">
+                    <button type="submit" class="btn btn-primary">{translations.get('create_user', 'Create New User')}</button>
+                </div>
+            </form>
+            <div id="statusMsg" class="status-msg"></div>
+        </div>
+
+        <div class="users-card" style="margin-top: 16px;">
+            <h3>{translations.get('existing_users', 'Existing Users')}</h3>
+            <table class="users-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>{translations.get('username', 'Username')}</th>
+                        <th>{translations.get('role', 'Role')}</th>
+                        <th>{translations.get('telegram_user_id_label', 'Telegram ID')}</th>
+                        <th>{translations.get('actions', 'Actions')}</th>
+                    </tr>
+                </thead>
+                <tbody id="usersTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script nonce="{self.nonce}">
+        const labels = {{
+            edit: {json.dumps(translations.get('edit', 'Edit'))},
+            remove: {json.dumps(translations.get('delete', 'Delete'))},
+            changePassword: {json.dumps(translations.get('change_password', 'Change Password'))},
+            changeRole: {json.dumps(translations.get('change_role', 'Change Role'))},
+            confirmDelete: {json.dumps(translations.get('confirm_delete_user', 'Delete this user and all related data?'))},
+            promptUsername: {json.dumps(translations.get('prompt_new_username', 'New username'))},
+            promptPassword: {json.dumps(translations.get('prompt_new_password', 'New password (min 6 chars)'))},
+            promptRole: {json.dumps(translations.get('prompt_new_role', 'New role: admin or user'))},
+            cannotDeleteSelf: {json.dumps(translations.get('cannot_delete_current_user', 'You cannot delete your current user.'))},
+            loadError: {json.dumps(translations.get('users_load_error', 'Unable to load users.'))},
+            roleUser: {json.dumps(translations.get('role_user', 'User'))},
+            roleAdmin: {json.dumps(translations.get('role_admin', 'Admin'))},
+            generateToken: {json.dumps(translations.get('generate_telegram_token', 'Generate Token'))},
+            unlinkTelegram: {json.dumps(translations.get('unlink_telegram', 'Unlink Telegram'))},
+            promptTokenTtl: {json.dumps(translations.get('prompt_token_ttl', 'Token validity in minutes'))},
+            tokenCreated: {json.dumps(translations.get('token_created', 'Token generated'))},
+            tokenUsageHint: {json.dumps(translations.get('token_usage_hint', 'Use in Telegram with: /link <token>'))}
+        }};
+
+        const statusMsg = document.getElementById('statusMsg');
+        const usersTableBody = document.getElementById('usersTableBody');
+
+        function showStatus(message, isError = false) {{
+            statusMsg.className = `status-msg ${{isError ? 'err' : 'ok'}}`;
+            statusMsg.textContent = message;
+        }}
+
+        function clearStatus() {{
+            statusMsg.className = 'status-msg';
+            statusMsg.textContent = '';
+        }}
+
+        async function fetchUsers() {{
+            try {{
+                const res = await fetch('/api/users');
+                if (!res.ok) throw new Error(labels.loadError);
+                const users = await res.json();
+                usersTableBody.innerHTML = users.map((u) => `
+                    <tr>
+                        <td>${{u.id}}</td>
+                        <td>${{u.username}}</td>
+                        <td>${{u.role === 'admin' ? labels.roleAdmin : labels.roleUser}}</td>
+                        <td class="mono">${{u.telegram_user_id ?? '-'}}</td>
+                        <td>
+                            <div class="inline-actions">
+                                <button class="btn btn-secondary" data-action="rename" data-id="${{u.id}}" data-username="${{u.username}}">${{labels.edit}}</button>
+                                <button class="btn" data-action="password" data-id="${{u.id}}">${{labels.changePassword}}</button>
+                                <button class="btn" data-action="role" data-id="${{u.id}}" data-role="${{u.role || 'user'}}">${{labels.changeRole}}</button>
+                                <button class="btn" data-action="token" data-id="${{u.id}}">${{labels.generateToken}}</button>
+                                <button class="btn" data-action="unlink_tg" data-id="${{u.id}}">${{labels.unlinkTelegram}}</button>
+                                <button class="btn btn-danger" data-action="delete" data-id="${{u.id}}">${{labels.remove}}</button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            }} catch (err) {{
+                showStatus(err.message || labels.loadError, true);
+            }}
+        }}
+
+        document.getElementById('createUserForm').addEventListener('submit', async (e) => {{
+            e.preventDefault();
+            clearStatus();
+
+            const username = document.getElementById('newUsername').value.trim();
+            const password = document.getElementById('newPassword').value;
+            const role = document.getElementById('newRole').value;
+
+            const res = await fetch('/api/users', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{ username, password, role }})
+            }});
+
+            const payload = await res.json().catch(() => ({{}}));
+            if (!res.ok) {{
+                showStatus(payload.error || 'Error', true);
+                return;
+            }}
+
+            showStatus(payload.status || 'User created');
+            e.target.reset();
+            await fetchUsers();
+        }});
+
+        usersTableBody.addEventListener('click', async (e) => {{
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            clearStatus();
+
+            const action = btn.dataset.action;
+            const userId = btn.dataset.id;
+
+            if (action === 'rename') {{
+                const currentUsername = btn.dataset.username || '';
+                const newUsername = window.prompt(labels.promptUsername, currentUsername);
+                if (newUsername === null) return;
+
+                const res = await fetch(`/api/users/${{userId}}`, {{
+                    method: 'PUT',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ username: newUsername.trim() }})
+                }});
+                const payload = await res.json().catch(() => ({{}}));
+                if (!res.ok) {{
+                    showStatus(payload.error || 'Error', true);
+                    return;
+                }}
+                showStatus(payload.status || 'User updated');
+                await fetchUsers();
+                return;
+            }}
+
+            if (action === 'password') {{
+                const password = window.prompt(labels.promptPassword, '');
+                if (password === null) return;
+
+                const res = await fetch(`/api/users/${{userId}}`, {{
+                    method: 'PUT',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ password }})
+                }});
+                const payload = await res.json().catch(() => ({{}}));
+                if (!res.ok) {{
+                    showStatus(payload.error || 'Error', true);
+                    return;
+                }}
+                showStatus(payload.status || 'Password updated');
+                return;
+            }}
+
+            if (action === 'role') {{
+                const currentRole = (btn.dataset.role || 'user').toLowerCase();
+                const roleInput = window.prompt(labels.promptRole, currentRole);
+                if (roleInput === null) return;
+
+                const normalizedRole = roleInput.trim().toLowerCase();
+                if (!['admin', 'user'].includes(normalizedRole)) {{
+                    showStatus(labels.promptRole, true);
+                    return;
+                }}
+
+                const res = await fetch(`/api/users/${{userId}}`, {{
+                    method: 'PUT',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ role: normalizedRole }})
+                }});
+                const payload = await res.json().catch(() => ({{}}));
+                if (!res.ok) {{
+                    showStatus(payload.error || 'Error', true);
+                    return;
+                }}
+                showStatus(payload.status || 'Role updated');
+                await fetchUsers();
+                return;
+            }}
+
+            if (action === 'token') {{
+                const ttlRaw = window.prompt(labels.promptTokenTtl, '60');
+                if (ttlRaw === null) return;
+                const ttl = Number.parseInt(ttlRaw, 10);
+                const ttlMinutes = Number.isFinite(ttl) ? ttl : 60;
+
+                const res = await fetch('/api/telegram-link-token', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ user_id: Number(userId), ttl_minutes: ttlMinutes }})
+                }});
+                const payload = await res.json().catch(() => ({{}}));
+                if (!res.ok) {{
+                    showStatus(payload.error || 'Error', true);
+                    return;
+                }}
+                showStatus(`${{labels.tokenCreated}}: ${{payload.token}}. ${{labels.tokenUsageHint}}`, false);
+                return;
+            }}
+
+            if (action === 'unlink_tg') {{
+                const res = await fetch(`/api/telegram-links/${{userId}}`, {{ method: 'DELETE' }});
+                const payload = await res.json().catch(() => ({{}}));
+                if (!res.ok) {{
+                    showStatus(payload.error || 'Error', true);
+                    return;
+                }}
+                showStatus(payload.status || 'Telegram link removed');
+                await fetchUsers();
+                return;
+            }}
+
+            if (action === 'delete') {{
+                if (!window.confirm(labels.confirmDelete)) return;
+                const res = await fetch(`/api/users/${{userId}}`, {{ method: 'DELETE' }});
+                const payload = await res.json().catch(() => ({{}}));
+                if (!res.ok) {{
+                    showStatus(payload.error || labels.cannotDeleteSelf, true);
+                    return;
+                }}
+                showStatus(payload.status || 'User deleted');
+                await fetchUsers();
+            }}
+        }});
+
+        fetchUsers();
+    </script>
+</body>
+</html>
+"""
+
 # --- Icon Definitions ---
 ICON_OPEN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>'
 ICON_EDIT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>'
@@ -46,10 +425,23 @@ ICON_DELETE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" strok
 ICON_READ = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
 ICON_UNREAD = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>'
 ICON_HN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
+ICON_STAR_FILLED = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'
+ICON_STAR_EMPTY = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'
+
+def render_star_rating(bookmark_id, rating, translations):
+    """Renders a 5-star inline rating control for a bookmark."""
+    rating = rating or 0
+    stars = []
+    for value in range(1, 6):
+        filled = value <= rating
+        title = translations.get('tooltip_set_rating', 'Rate {n} stars').format(n=value)
+        icon = ICON_STAR_FILLED if filled else ICON_STAR_EMPTY
+        stars.append(f'<span class="star{" filled" if filled else ""}" data-value="{value}" title="{title}">{icon}</span>')
+    return f'<div class="star-rating" data-id="{bookmark_id}" data-rating="{rating}">{"".join(stars)}</div>'
 
 def render_bookmark_card(bookmark, translations):
     """Renders a single bookmark as an HTML card."""
-    (id, url, title, description, image_url, domain, saved_at, telegram_user_id, telegram_message_id, comments_url, tags, is_read) = bookmark
+    (id, url, title, description, image_url, domain, saved_at, telegram_user_id, telegram_message_id, comments_url, tags, is_read, rating) = bookmark
     
     def escape_html(text):
         if text is None: return ""  # noqa: E701
@@ -68,7 +460,7 @@ def render_bookmark_card(bookmark, translations):
     
     bookmark_data_json = json.dumps({
         'id': id, 'url': url, 'title': title, 'description': description,
-        'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read, 'tags': parsed_tags
+        'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read, 'tags': parsed_tags, 'rating': rating
     }, ensure_ascii=False)
     bookmark_json_html = bookmark_data_json.replace("\\", "\\\\").replace("'", "&#39;").replace('"', '&quot;')
 
@@ -103,6 +495,7 @@ def render_bookmark_card(bookmark, translations):
         <div class="bookmark-tags">
             {''.join(f'<span class="tag">{escape_html(t)}</span>' for t in parsed_tags)}
         </div>
+        {render_star_rating(id, rating, translations)}
         <div class="bookmark-footer">
             <div class="bookmark-footer-meta">
                 <span class="bookmark-date">{saved_at.split(' ')[0]}</span>
@@ -115,15 +508,12 @@ def render_bookmark_card(bookmark, translations):
 
 def render_bookmark_compact_item(bookmark, translations):
     """Renders a single bookmark as a compact list item."""
-    (id, url, title, _, image_url, domain, saved_at, telegram_user_id, telegram_message_id, comments_url, tags, is_read) = bookmark
+    (id, url, title, _, image_url, domain, saved_at, telegram_user_id, telegram_message_id, comments_url, tags, is_read, rating) = bookmark
 
     def escape_html(text):
         if text is None: return ""  # noqa: E701
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;')
 
-    bookmark_data_json = json.dumps({
-        'id': id, 'url': url, 'title': title, 'description': _, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read
-    }, ensure_ascii=False)
     # include tags in compact item JSON
     try:
         if isinstance(tags, str) and tags.strip():
@@ -135,7 +525,7 @@ def render_bookmark_compact_item(bookmark, translations):
     except (json.JSONDecodeError, AttributeError):
         compact_tags = []
     bookmark_data_json = json.dumps({
-        'id': id, 'url': url, 'title': title, 'description': _, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read, 'tags': compact_tags
+        'id': id, 'url': url, 'title': title, 'description': _, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read, 'tags': compact_tags, 'rating': rating
     }, ensure_ascii=False)
     bookmark_json_html = bookmark_data_json.replace("\\", "\\\\").replace("'", "&#39;").replace('"', '&quot;')
 
@@ -153,6 +543,7 @@ def render_bookmark_compact_item(bookmark, translations):
             <span class="compact-domain">{escape_html(domain)}</span>
             <span class="compact-id">ID {id}</span>
             <div class="compact-tags">{''.join(f'<span class="tag">{escape_html(t)}</span>' for t in compact_tags)}</div>
+            {render_star_rating(id, rating, translations)}
         </div>
         <div class="compact-date">{saved_at.split(' ')[0]}</div>
         <div class="compact-badges">
@@ -281,7 +672,7 @@ def build_export_html_document(html_content, total_count, generated_at):
 </body>
 </html>"""
 
-def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, search_query=None, has_more=False):
+def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, search_query=None, has_more=False, can_manage_users=False):
     # HTML escape function to avoid issues with quotes in data
     def escape_html(text):
         if text is None:
@@ -610,6 +1001,7 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     :class="hideRead ? 'active' : ''" 
                     title="{translations.get('tooltip_toggle_read', 'Toggle read...')}"
             >{translations.get('hide_read', 'Hide Read')}</button>
+            {f'<a href="/users" class="filter-btn" title="{translations.get("tooltip_manage_users", "Manage users")}">{translations.get("manage_users", "Users")}</a>' if can_manage_users else ''}
             <div class="export-dropdown">
                 <button class="filter-btn export-btn" title="{translations.get('tooltip_export', 'Export bookmarks...')}">
                     📤 {translations.get('export', 'Export')}

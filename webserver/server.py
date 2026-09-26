@@ -18,7 +18,7 @@ from contextlib import contextmanager
 import argparse
 import secrets
 from datetime import datetime, timedelta
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 # Add the project root to the path to import the shared library
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,6 +32,7 @@ from .htmldata import (
     render_bookmarks,
     render_bookmarks_compact,
     get_login_page,
+    get_user_management_page,
     render_bookmarks_export,
     build_export_html_document,
 )
@@ -124,6 +125,32 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             result = cursor.fetchone()
 
         return result[0] if result else None
+
+    def get_current_user_role(self):
+        """Returns the current authenticated user's role, if available."""
+        user_id = self.get_current_user()
+        if not user_id:
+            return None
+
+        with db_connection() as cursor:
+            cursor.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+            row = cursor.fetchone()
+
+        return row[0] if row else None
+
+    def is_current_user_admin(self):
+        """Checks whether the current authenticated user is admin."""
+        return self.get_current_user_role() == 'admin'
+
+    def _require_admin_user(self):
+        """Ensures the current user has admin role for protected operations."""
+        if not self.get_current_user():
+            self._send_error_response(401, "Authentication required")
+            return False
+        if not self.is_current_user_admin():
+            self._send_error_response(403, "Admin permissions required")
+            return False
+        return True
 
     def get_user_language(self):
         """Determines the user's preferred language."""
@@ -311,6 +338,33 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self._send_error_response(400, "Invalid bookmark ID")
             return None
 
+    def _parse_user_id_from_parts(self, parts):
+        """Parses user id from split API path parts."""
+        try:
+            return int(parts[2])
+        except (IndexError, ValueError):
+            self._send_error_response(400, "Invalid user ID")
+            return None
+
+    def _read_json_body(self):
+        """Reads and parses a JSON body from the incoming request."""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            self._send_error_response(400, "Invalid Content-Length")
+            return None
+
+        if content_length <= 0:
+            self._send_error_response(400, "Request body is empty")
+            return None
+
+        raw = self.rfile.read(content_length)
+        try:
+            return json.loads(raw.decode('utf-8'))
+        except json.JSONDecodeError:
+            self._send_error_response(400, "Invalid JSON body")
+            return None
+
     def do_GET(self):
         """
         Handles GET requests.
@@ -346,9 +400,18 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         if path == '/':
             self.serve_homepage()
+        elif path == '/users':
+            if not self.is_current_user_admin():
+                self._redirect('/')
+                return
+            self.serve_user_management_page()
         elif path == '/api/bookmarks':
             params = self._parse_bookmark_query_params()
             self.serve_bookmarks_api(**params)
+        elif path == '/api/users':
+            self.serve_users_api()
+        elif path == '/api/telegram-links':
+            self.serve_telegram_links_api()
         elif path == '/api/export/csv':
             self.serve_export_csv()
         elif path == '/api/export/json':
@@ -388,6 +451,10 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         if path == '/api/bookmarks':
             self.add_bookmark()
+        elif path == '/api/users':
+            self.add_user_api()
+        elif path == '/api/telegram-link-token':
+            self.generate_telegram_link_token_api()
         elif path == '/api/scrape':
             self.scrape_metadata()
         else:
@@ -411,6 +478,21 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         parts = urlparse(self.path).path.strip('/').split('/')
 
+        if len(parts) == 3 and parts[0] == 'api' and parts[1] == 'telegram-links':
+            user_id = self._parse_user_id_from_parts(parts)
+            if user_id is None:
+                return
+
+            self.delete_telegram_link_api(user_id)
+            return
+
+        if len(parts) == 3 and parts[0] == 'api' and parts[1] == 'users':
+            user_id = self._parse_user_id_from_parts(parts)
+            if user_id is None:
+                return
+            self.update_user_api(user_id)
+            return
+
         # Supports: /api/bookmarks/<id>  (update)
         # and /api/bookmarks/<id>/read (set read flag)
         if len(parts) >= 3 and parts[0] == 'api' and parts[1] == 'bookmarks':
@@ -420,6 +502,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             if len(parts) == 4 and parts[3] == 'read':
                 self.mark_read(bookmark_id)
+            elif len(parts) == 4 and parts[3] == 'rating':
+                self.set_rating(bookmark_id)
             else:
                 self.update_bookmark(bookmark_id)
         else:
@@ -441,6 +525,14 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             return
 
         parts = urlparse(self.path).path.strip('/').split('/')
+
+        if len(parts) == 3 and parts[0] == 'api' and parts[1] == 'users':
+            user_id = self._parse_user_id_from_parts(parts)
+            if user_id is None:
+                return
+
+            self.delete_user_api(user_id)
+            return
 
         # Supports: /api/bookmarks/<id>
         if len(parts) == 3 and parts[0] == 'api' and parts[1] == 'bookmarks':
@@ -561,7 +653,15 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         # The total count always refers to all bookmarks in the DB
         total_count_for_filters = self.get_total_bookmark_count(current_user_id, filter_type=None, hide_read=hide_read_default, search_query=None) # Initial filter
         
-        html = get_html(self, bookmarks_to_render, __version__, total_count_for_filters, translations, has_more=has_more)
+        html = get_html(
+            self,
+            bookmarks_to_render,
+            __version__,
+            total_count_for_filters,
+            translations,
+            has_more=has_more,
+            can_manage_users=self.is_current_user_admin(),
+        )
 
         # Send headers in the correct order
         self.send_response(200)
@@ -575,6 +675,292 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
         self.end_headers()
         self._write_response_body(html.encode('utf-8'))
+
+    def serve_user_management_page(self):
+        """Serves the HTML page for user management."""
+        lang_code = self.get_user_language()
+        translations = load_translations(lang_code)
+        if not hasattr(self, 'nonce'):
+            self.nonce = secrets.token_hex(16)
+        self._send_html_response(200, get_user_management_page(self, translations))
+
+    def serve_users_api(self):
+        """Returns users for the user management UI."""
+        if not self._require_admin_user():
+            return
+        try:
+            with db_connection() as cursor:
+                cursor.execute(
+                    """
+                    SELECT u.id, u.username, u.role, tul.telegram_user_id
+                    FROM users u
+                    LEFT JOIN telegram_user_links tul ON tul.user_id = u.id
+                    ORDER BY LOWER(u.username) ASC
+                    """
+                )
+                users = cursor.fetchall()
+            self._send_json_response(
+                200,
+                [
+                    {
+                        'id': row[0],
+                        'username': row[1],
+                        'role': row[2] or 'user',
+                        'telegram_user_id': row[3],
+                    }
+                    for row in users
+                ]
+            )
+        except Exception as e:
+            logger.error("Error reading users list: %s", e)
+            self._send_error_response(500, "Failed to load users")
+
+    def serve_telegram_links_api(self):
+        """Returns Telegram linking data for admin UI."""
+        if not self._require_admin_user():
+            return
+        try:
+            now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            with db_connection() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        u.id,
+                        u.username,
+                        tul.telegram_user_id,
+                        tlt.token,
+                        tlt.expires_at
+                    FROM users u
+                    LEFT JOIN telegram_user_links tul ON tul.user_id = u.id
+                    LEFT JOIN telegram_link_tokens tlt
+                        ON tlt.user_id = u.id
+                        AND tlt.used_at IS NULL
+                        AND tlt.expires_at > ?
+                    ORDER BY LOWER(u.username) ASC
+                    """,
+                    (now_text,)
+                )
+                rows = cursor.fetchall()
+
+            payload = []
+            for row in rows:
+                payload.append(
+                    {
+                        'user_id': row[0],
+                        'username': row[1],
+                        'telegram_user_id': row[2],
+                        'active_token': row[3],
+                        'token_expires_at': row[4],
+                    }
+                )
+            self._send_json_response(200, payload)
+        except Exception as e:
+            logger.error("Error reading telegram links: %s", e)
+            self._send_error_response(500, "Failed to load telegram links")
+
+    def generate_telegram_link_token_api(self):
+        """Generates a one-time token used by /link command in Telegram bot."""
+        if not self._require_admin_user():
+            return
+
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        try:
+            user_id = int(data.get('user_id'))
+        except (TypeError, ValueError):
+            self._send_error_response(400, "Invalid user_id")
+            return
+
+        ttl_minutes = self._safe_int(data.get('ttl_minutes', 60), 60, min_value=1, max_value=1440)
+        token = secrets.token_hex(16)
+        expires_at = (datetime.now() + timedelta(minutes=ttl_minutes)).strftime('%Y-%m-%d %H:%M:%S')
+
+        try:
+            with db_connection() as cursor:
+                cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+                if cursor.fetchone() is None:
+                    self._send_error_response(404, "User not found")
+                    return
+
+                cursor.execute("DELETE FROM telegram_link_tokens WHERE user_id = ? AND used_at IS NULL", (user_id,))
+                cursor.execute(
+                    "INSERT INTO telegram_link_tokens (token, user_id, expires_at) VALUES (?, ?, ?)",
+                    (token, user_id, expires_at)
+                )
+
+            self._send_json_response(
+                201,
+                {
+                    'status': 'Token generated',
+                    'token': token,
+                    'user_id': user_id,
+                    'expires_at': expires_at,
+                }
+            )
+        except Exception as e:
+            logger.error("Error generating telegram link token: %s", e)
+            self._send_error_response(500, "Failed to generate token")
+
+    def delete_telegram_link_api(self, user_id):
+        """Deletes Telegram mapping for the provided user id."""
+        if not self._require_admin_user():
+            return
+        try:
+            with db_connection() as cursor:
+                cursor.execute("DELETE FROM telegram_user_links WHERE user_id = ?", (user_id,))
+            self._send_json_response(200, {'status': 'Telegram link removed'})
+        except Exception as e:
+            logger.error("Error deleting telegram link for user %s: %s", user_id, e)
+            self._send_error_response(500, "Failed to remove telegram link")
+
+    def add_user_api(self):
+        """Creates a new user from JSON body: username, password."""
+        if not self._require_admin_user():
+            return
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        username = str(data.get('username', '')).strip()
+        password = str(data.get('password', ''))
+        role = str(data.get('role', 'user')).strip().lower() or 'user'
+
+        if len(username) < 3:
+            self._send_error_response(400, "Username must be at least 3 characters")
+            return
+        if len(password) < 6:
+            self._send_error_response(400, "Password must be at least 6 characters")
+            return
+        if role not in ('admin', 'user'):
+            self._send_error_response(400, "Invalid role")
+            return
+
+        password_hash = generate_password_hash(password)
+        try:
+            with db_connection() as cursor:
+                cursor.execute(
+                    "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+                    (username, password_hash, role)
+                )
+            self._send_json_response(201, {'status': f"User '{username}' created"})
+        except sqlite3.IntegrityError:
+            self._send_error_response(409, "Username already exists")
+        except Exception as e:
+            logger.error("Error creating user: %s", e)
+            self._send_error_response(500, "Failed to create user")
+
+    def update_user_api(self, target_user_id):
+        """Updates username and/or password for an existing user."""
+        if not self._require_admin_user():
+            return
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        username = data.get('username')
+        password = data.get('password')
+        role = data.get('role')
+
+        updates = []
+        params = []
+
+        if username is not None:
+            username = str(username).strip()
+            if len(username) < 3:
+                self._send_error_response(400, "Username must be at least 3 characters")
+                return
+            updates.append("username = ?")
+            params.append(username)
+
+        if password is not None:
+            password = str(password)
+            if len(password) < 6:
+                self._send_error_response(400, "Password must be at least 6 characters")
+                return
+            updates.append("password_hash = ?")
+            params.append(generate_password_hash(password))
+
+        if role is not None:
+            role = str(role).strip().lower()
+            if role not in ('admin', 'user'):
+                self._send_error_response(400, "Invalid role")
+                return
+            updates.append("role = ?")
+            params.append(role)
+
+        if not updates:
+            self._send_error_response(400, "Nothing to update")
+            return
+
+        try:
+            with db_connection() as cursor:
+                cursor.execute("SELECT id, role FROM users WHERE id = ?", (target_user_id,))
+                target_user = cursor.fetchone()
+                if target_user is None:
+                    self._send_error_response(404, "User not found")
+                    return
+
+                current_user_id = self.get_current_user()
+                current_role = target_user[1] or 'user'
+                new_role = role if role is not None else current_role
+
+                # Avoid locking out the system by removing the last admin.
+                if current_role == 'admin' and new_role != 'admin':
+                    cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'")
+                    admin_count = cursor.fetchone()[0]
+                    if admin_count <= 1:
+                        self._send_error_response(400, "Cannot demote the last admin")
+                        return
+
+                if current_user_id == target_user_id and current_role == 'admin' and new_role != 'admin':
+                    self._send_error_response(400, "Cannot remove your own admin role")
+                    return
+
+                query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+                cursor.execute(query, params + [target_user_id])
+
+            self._send_json_response(200, {'status': 'User updated'})
+        except sqlite3.IntegrityError:
+            self._send_error_response(409, "Username already exists")
+        except Exception as e:
+            logger.error("Error updating user %s: %s", target_user_id, e)
+            self._send_error_response(500, "Failed to update user")
+
+    def delete_user_api(self, target_user_id):
+        """Deletes a user and related data (sessions/bookmarks)."""
+        if not self._require_admin_user():
+            return
+        current_user_id = self.get_current_user()
+        if current_user_id == target_user_id:
+            self._send_error_response(400, "Cannot delete the currently logged-in user")
+            return
+
+        try:
+            with db_connection() as cursor:
+                cursor.execute("SELECT id, role FROM users WHERE id = ?", (target_user_id,))
+                target_user = cursor.fetchone()
+                if target_user is None:
+                    self._send_error_response(404, "User not found")
+                    return
+
+                if (target_user[1] or 'user') == 'admin':
+                    cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'")
+                    admin_count = cursor.fetchone()[0]
+                    if admin_count <= 1:
+                        self._send_error_response(400, "Cannot delete the last admin")
+                        return
+
+                # Keep data consistent even if SQLite foreign keys are disabled.
+                cursor.execute("DELETE FROM sessions WHERE user_id = ?", (target_user_id,))
+                cursor.execute("DELETE FROM bookmarks WHERE user_id = ?", (target_user_id,))
+                cursor.execute("DELETE FROM users WHERE id = ?", (target_user_id,))
+
+            self._send_json_response(200, {'status': 'User deleted'})
+        except Exception as e:
+            logger.error("Error deleting user %s: %s", target_user_id, e)
+            self._send_error_response(500, "Failed to delete user")
 
     def _send_json_response(self, status_code, data):
         """Helper to send JSON responses."""
@@ -695,6 +1081,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             'comments_url': row[9],
             'tags': tags,
             'is_read': row[11] if len(row) > 11 else 0,
+            'rating': row[12] if len(row) > 12 else 0,
         }
 
     def serve_bookmarks_ui(self, search_query=None, hide_read=False, sort_order='desc', filter_type=None, limit=DEFAULT_PAGE_SIZE, offset=0):
@@ -1097,7 +1484,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                     SELECT id, url, title, description, image_url, domain,
                         datetime(saved_at, 'localtime') as saved_at,
                         telegram_user_id, telegram_message_id, comments_url, tags,
-                        COALESCE(is_read, 0) as is_read
+                        COALESCE(is_read, 0) as is_read, COALESCE(rating, 0) as rating
                     FROM bookmarks WHERE id = ?
                 """, (bookmark_id,))
                 updated_bookmark_tuple = cursor.fetchone()
@@ -1173,6 +1560,48 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             logger.error(f"Error marking bookmark {bookmark_id} as read: {e}")
             self._send_error_response(500, "An internal error occurred")
 
+    def set_rating(self, bookmark_id):
+        """
+        Sets the `rating` (0-5 stars) for a bookmark.
+
+        Behavior:
+          - reads JSON from the body with the key 'rating' (int)
+          - clamps the value to the 0-5 range
+          - updates the record in the DB and responds with JSON: {"status": "ok", "rating": <0-5>}
+
+        Responds with 400 if the body is missing/invalid, 500 with the error message in case of an error.
+        """
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length == 0:
+                self._send_error_response(400, "Request body is empty")
+                return
+
+            post_data = self.rfile.read(content_length)
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+            except json.JSONDecodeError:
+                self._send_error_response(400, "Invalid JSON body")
+                return
+
+            try:
+                rating = int(data.get('rating', 0))
+            except (TypeError, ValueError):
+                self._send_error_response(400, "Invalid rating value")
+                return
+            rating = max(0, min(5, rating))
+
+            user_id = self.get_current_user()
+            with db_connection() as cursor:
+                cursor.execute("UPDATE bookmarks SET rating = ? WHERE id = ? AND user_id = ?", (rating, bookmark_id, user_id))
+            self._send_json_response(200, {'status': 'ok', 'rating': rating})
+
+        except sqlite3.Error as e:
+            self._send_error_response(500, str(e))
+        except Exception as e:
+            logger.error(f"Error setting rating for bookmark {bookmark_id}: {e}")
+            self._send_error_response(500, "An internal error occurred")
+
     def add_bookmark(self):
         """
         Adds a new bookmark to the database by reading JSON from the body.
@@ -1245,8 +1674,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 tags_json = json.dumps(tags_list, ensure_ascii=False)
 
                 cursor.execute("""
-                    INSERT INTO bookmarks (user_id, url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url, tags, is_read)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO bookmarks (user_id, url, title, description, image_url, domain, telegram_user_id, telegram_message_id, comments_url, tags, is_read, rating)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 """, (
                     user_id,
                     url,
@@ -1266,7 +1695,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                     SELECT id, url, title, description, image_url, domain,
                         datetime(saved_at, 'localtime') as saved_at,
                         telegram_user_id, telegram_message_id, comments_url, tags,
-                        COALESCE(is_read, 0) as is_read
+                        COALESCE(is_read, 0) as is_read, COALESCE(rating, 0) as rating
                     FROM bookmarks WHERE id = ?
                 """, (new_bookmark_id,))
                 new_bookmark_tuple = cursor.fetchone()
@@ -1388,7 +1817,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                     SELECT id, url, title, description, image_url, domain,
                         datetime(saved_at, 'localtime') as saved_at,
                         telegram_user_id, telegram_message_id, comments_url, tags,
-                        COALESCE(is_read, 0) as is_read
+                        COALESCE(is_read, 0) as is_read, COALESCE(rating, 0) as rating
                     FROM bookmarks
                     WHERE {where_clause}
                     ORDER BY id {order}

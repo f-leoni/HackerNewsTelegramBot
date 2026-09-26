@@ -64,6 +64,8 @@ def test_init_database_creates_tables(mock_db_path):
     assert 'users' in tables
     assert 'sessions' in tables
     assert 'bookmarks' in tables
+    assert 'telegram_user_links' in tables
+    assert 'telegram_link_tokens' in tables
     
 
 def test_init_database_creates_all_columns(mock_db_path):
@@ -78,5 +80,5 @@ def test_init_database_creates_all_columns(mock_db_path):
     # Check columns for the 'bookmarks' table
     cursor.execute("PRAGMA table_info(bookmarks)")
     bookmark_columns = {row[1] for row in cursor.fetchall()}
-    expected_bookmark_columns = {'id', 'user_id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read'}
+    expected_bookmark_columns = {'id', 'user_id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read', 'rating'}
     assert expected_bookmark_columns.issubset(bookmark_columns)

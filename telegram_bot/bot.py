@@ -110,6 +110,63 @@ class BookmarkBot:
         # Register handlers
         self.setup_handlers()
 
+    def _parse_db_datetime(self, raw_value):
+        """Parses datetime values returned by SQLite into a datetime object."""
+        if raw_value is None:
+            return None
+        if isinstance(raw_value, datetime):
+            return raw_value
+        if isinstance(raw_value, str):
+            try:
+                return datetime.fromisoformat(raw_value.replace(' ', 'T'))
+            except ValueError:
+                return None
+        return None
+
+    def _resolve_web_user_id(self, cursor, telegram_user_id):
+        """Returns the mapped web user id for a Telegram user id."""
+        cursor.execute(
+            "SELECT user_id FROM telegram_user_links WHERE telegram_user_id = ?",
+            (telegram_user_id,)
+        )
+        result = cursor.fetchone()
+        return result[0] if result else None
+
+    def _consume_link_token(self, cursor, token, telegram_user_id):
+        """Consumes a one-time token and creates/updates Telegram-to-web mapping."""
+        cursor.execute(
+            "SELECT token, user_id, expires_at, used_at FROM telegram_link_tokens WHERE token = ?",
+            (token,)
+        )
+        token_row = cursor.fetchone()
+        if not token_row:
+            return False, "Token non valido."
+
+        _, user_id, expires_at, used_at = token_row
+        if used_at is not None:
+            return False, "Token gia utilizzato."
+
+        expires_dt = self._parse_db_datetime(expires_at)
+        if not expires_dt or expires_dt <= datetime.now():
+            return False, "Token scaduto. Chiedi un nuovo token all'admin."
+
+        # Enforce 1:1 mapping by replacing previous links on both sides.
+        cursor.execute("DELETE FROM telegram_user_links WHERE telegram_user_id = ?", (telegram_user_id,))
+        cursor.execute("DELETE FROM telegram_user_links WHERE user_id = ?", (user_id,))
+        cursor.execute(
+            "INSERT INTO telegram_user_links (user_id, telegram_user_id) VALUES (?, ?)",
+            (user_id, telegram_user_id)
+        )
+        cursor.execute(
+            "UPDATE telegram_link_tokens SET used_at = ?, used_telegram_user_id = ? WHERE token = ?",
+            (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), telegram_user_id, token)
+        )
+
+        cursor.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+        user_row = cursor.fetchone()
+        username = user_row[0] if user_row else f"ID {user_id}"
+        return True, f"Collegamento completato. Account web associato: {username}."
+
     def extract_urls(self, text):
         """
         Extracts and normalizes URLs from text content.
@@ -208,13 +265,11 @@ class BookmarkBot:
             )
             metadata["tags"] = tags
 
-            # Retrieve the ID of the first webserver user to associate the bookmark
-            cursor.execute("SELECT id FROM users ORDER BY id LIMIT 1")
-            web_user = cursor.fetchone()
-            web_user_id = web_user[0] if web_user else None
+            web_user_id = self._resolve_web_user_id(cursor, from_user_id)
 
             if not web_user_id:
-                logger.error("No web user found in the database. Cannot associate bookmark.")
+                logger.error("Telegram user %s is not linked to a web user. Cannot save bookmark.", from_user_id)
+                self._last_save_error = "unlinked"
                 return False
 
             cursor.execute(
@@ -237,9 +292,11 @@ class BookmarkBot:
                 ),
             )
             conn.commit()
+            self._last_save_error = None
             logger.info(f"Bookmark saved: {metadata['title']}")
             return True
         except Exception as e:
+            self._last_save_error = "generic"
             logger.error(f"Error saving bookmark: {e}")
             return False
         finally:
@@ -257,7 +314,7 @@ class BookmarkBot:
         The handlers extract URLs from messages and save them as bookmarks.
         """
 
-        @self.app.on_message(filters.private & ~filters.command(["count", "help"]))
+        @self.app.on_message(filters.private & ~filters.command(["count", "help", "register", "link", "whoami", "unlink"]))
         async def handle_private_message(client, message):
             """Handler for messages in saved messages
             
@@ -313,16 +370,15 @@ class BookmarkBot:
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
 
-                # Find the web user to count bookmarks for.
-                # This logic matches how bookmarks are saved.
-                cursor.execute("SELECT id FROM users ORDER BY id LIMIT 1")
-                web_user = cursor.fetchone()
-
-                if not web_user:
-                    await message.reply("No web user configured. Cannot count bookmarks.")
+                telegram_user_id = getattr(getattr(message, 'from_user', None), 'id', None)
+                if telegram_user_id is None:
+                    await message.reply("Impossibile leggere il tuo Telegram ID.")
                     return
 
-                web_user_id = web_user[0]
+                web_user_id = self._resolve_web_user_id(cursor, telegram_user_id)
+                if web_user_id is None:
+                    await message.reply("Il tuo account Telegram non e collegato. Usa /register e poi /link <token>.")
+                    return
 
                 cursor.execute("SELECT COUNT(*) FROM bookmarks WHERE user_id = ?", (web_user_id,))
                 count = cursor.fetchone()[0]
@@ -332,6 +388,99 @@ class BookmarkBot:
             except Exception as e:
                 logger.error(f"Error handling /count command: {e}")
                 await message.reply("Si è verificato un errore nel contare i bookmark.")
+
+        @self.app.on_message(filters.command("register") & filters.private)
+        async def handle_register_command(client, message):
+            """Shows instructions to link current Telegram account with a web user."""
+            telegram_user_id = getattr(getattr(message, 'from_user', None), 'id', None)
+            text = (
+                "Per collegare il tuo account Telegram al webserver:\n"
+                "1) Chiedi a un admin di generare un token di collegamento.\n"
+                "2) Invia qui: /link <token>\n\n"
+                f"Il tuo Telegram ID: {telegram_user_id}"
+            )
+            await message.reply(text)
+
+        @self.app.on_message(filters.command("link") & filters.private)
+        async def handle_link_command(client, message):
+            """Links current Telegram account using a one-time token."""
+            telegram_user_id = getattr(getattr(message, 'from_user', None), 'id', None)
+            text = (message.text or '').strip()
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2 or not parts[1].strip():
+                await message.reply("Uso corretto: /link <token>")
+                return
+
+            token = parts[1].strip()
+            db_path = get_db_path()
+            conn = None
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                ok, response_message = self._consume_link_token(cursor, token, telegram_user_id)
+                if ok:
+                    conn.commit()
+                    await message.reply(response_message)
+                else:
+                    await message.reply(response_message)
+            except Exception as e:
+                logger.error("Error linking telegram account: %s", e)
+                await message.reply("Errore durante il collegamento account.")
+            finally:
+                if conn:
+                    conn.close()
+
+        @self.app.on_message(filters.command("whoami") & filters.private)
+        async def handle_whoami_command(client, message):
+            """Shows current Telegram-to-web mapping information."""
+            telegram_user_id = getattr(getattr(message, 'from_user', None), 'id', None)
+            db_path = get_db_path()
+            conn = None
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT u.username, u.role
+                    FROM telegram_user_links tul
+                    JOIN users u ON u.id = tul.user_id
+                    WHERE tul.telegram_user_id = ?
+                    """,
+                    (telegram_user_id,)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    await message.reply("Nessun collegamento attivo. Usa /register e poi /link <token>.")
+                    return
+                await message.reply(f"Collegato a: {row[0]} (ruolo: {row[1]})")
+            except Exception as e:
+                logger.error("Error in /whoami: %s", e)
+                await message.reply("Errore durante la lettura del collegamento.")
+            finally:
+                if conn:
+                    conn.close()
+
+        @self.app.on_message(filters.command("unlink") & filters.private)
+        async def handle_unlink_command(client, message):
+            """Removes current Telegram-to-web mapping."""
+            telegram_user_id = getattr(getattr(message, 'from_user', None), 'id', None)
+            db_path = get_db_path()
+            conn = None
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM telegram_user_links WHERE telegram_user_id = ?", (telegram_user_id,))
+                if cursor.rowcount > 0:
+                    conn.commit()
+                    await message.reply("Collegamento rimosso con successo.")
+                else:
+                    await message.reply("Nessun collegamento da rimuovere.")
+            except Exception as e:
+                logger.error("Error unlinking telegram account: %s", e)
+                await message.reply("Errore durante la rimozione del collegamento.")
+            finally:
+                if conn:
+                    conn.close()
 
         @self.app.on_message(filters.command("help") & filters.private)
         async def handle_help_command(client, message):
@@ -347,6 +496,10 @@ class BookmarkBot:
                 "in the same message, I will link them into a single bookmark.\n\n"
                 "🤖 **Available commands**\n"
                 "- `/count`: Shows the total number of bookmarks you have saved.\n"
+                "- `/register`: Shows instructions to link your Telegram account.\n"
+                "- `/link <token>`: Links your Telegram account to your web user.\n"
+                "- `/whoami`: Shows your current account mapping.\n"
+                "- `/unlink`: Removes your current account mapping.\n"
                 "- `/help`: Shows this help message.\n\n"
                 "Your bookmarks are visible in the web interface."
             )
@@ -446,6 +599,9 @@ class BookmarkBot:
                         f"📖 **HN Bookmark saved!**\n📰 {metadata['title']}\n🔗 {metadata['domain']}{tags_line}"
                     )
                     return # We are done, exit the function
+                if self._last_save_error == "unlinked":
+                    await message.reply("Account non collegato. Usa /register e poi /link <token>.")
+                    return
 
             # Previous logic for all other cases (single or multiple non-HN links)
             saved_count = 0
@@ -473,6 +629,8 @@ class BookmarkBot:
                     tags_block = "\n🏷️ Tags:\n" + "\n".join(tags_summary) if tags_summary else ""
                     reply_text = f"📖 **Saved {saved_count} bookmarks!**{tags_block}"
                 await message.reply(reply_text)
+            elif self._last_save_error == "unlinked":
+                await message.reply("Account non collegato. Usa /register e poi /link <token>.")
         else:
             logger.info("--> No URL found in the message. End of processing.")
 

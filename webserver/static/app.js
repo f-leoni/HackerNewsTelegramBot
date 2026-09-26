@@ -28,6 +28,25 @@ function showToast(message, isError = false) {
 }
 
 /**
+ * Renders the inline 5-star rating control for a bookmark, matching htmldata.py's render_star_rating.
+ * @param {object} bookmark - The bookmark object.
+ * @returns {string} - The HTML string for the star rating control.
+ */
+function renderStarRating(bookmark) {
+    const ICON_STAR_FILLED = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>';
+    const ICON_STAR_EMPTY = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>';
+    const translations = window.TRANSLATIONS || {};
+    const rating = bookmark.rating || 0;
+    let stars = '';
+    for (let value = 1; value <= 5; value++) {
+        const filled = value <= rating;
+        const title = (translations.tooltip_set_rating || 'Rate {n} stars').replace('{n}', value);
+        stars += `<span class="star ${filled ? 'filled' : ''}" data-value="${value}" title="${title}">${filled ? ICON_STAR_FILLED : ICON_STAR_EMPTY}</span>`;
+    }
+    return `<div class="star-rating" data-id="${bookmark.id}" data-rating="${rating}">${stars}</div>`;
+}
+
+/**
  * Renders a single bookmark into the detailed card view HTML structure.
  * This function is still used by the Alpine.js modal to update the UI after an edit/add.
  * @param {object} bookmark - The bookmark object.
@@ -63,6 +82,7 @@ function renderBookmarkCard(bookmark) {
 
             <p class="bookmark-description">${bookmark.description || ''}</p>
         </div>
+        ${renderStarRating(bookmark)}
         <div class="bookmark-footer">
             <img src="${bookmark.image_url}" alt="Preview" class="bookmark-image-footer">
             <span class="bookmark-date">${bookmark.saved_at}</span>
@@ -99,6 +119,7 @@ function renderBookmarkCompactItem(bookmark) {
         <div class="compact-content">
             <a href="${bookmark.url}" target="_blank" class="compact-title" title="${bookmark.title}">${bookmark.title || 'Untitled'}</a>
             <span class="compact-domain">${bookmark.domain}</span>
+            ${renderStarRating(bookmark)}
         </div>
         <div class="compact-date">${shortDate}</div>
         <div class="compact-badges">
@@ -177,6 +198,39 @@ document.addEventListener('click', function(event) {
         })
         .catch(error => showToast(error.message, true));
     }
+});
+
+// Event delegation for setting the star rating from card/list views
+document.addEventListener('click', function(event) {
+    const star = event.target.closest('.star');
+    if (!star) return;
+
+    const container = star.closest('.star-rating[data-id]');
+    if (!container) return;
+
+    const bookmarkId = container.dataset.id;
+    const rating = parseInt(star.dataset.value, 10);
+    const translations = window.TRANSLATIONS || {};
+
+    fetch(`/api/bookmarks/${bookmarkId}/rating`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            document.querySelectorAll(`.star-rating[data-id='${bookmarkId}']`).forEach(el => {
+                el.dataset.rating = data.rating;
+                el.querySelectorAll('.star').forEach(s => {
+                    const filled = parseInt(s.dataset.value, 10) <= data.rating;
+                    s.classList.toggle('filled', filled);
+                });
+            });
+            showToast(translations.toast_rating_updated || "Rating updated");
+        }
+    })
+    .catch(error => showToast(error.message, true));
 });
 
 // Event delegation for clicking tag badges and opening the edit modal

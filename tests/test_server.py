@@ -359,3 +359,96 @@ def test_mark_read_rejects_invalid_json_body(test_client):
     assert status == 400
     assert response_json is not None
     assert response_json.get('error') == 'Invalid JSON body'
+
+
+def test_add_bookmark_defaults_rating_to_zero(test_client):
+    """Newly created bookmarks should always start with rating = 0."""
+    make_request, session_id, user_id, conn = test_client
+    headers = {
+        'Cookie': f'session_id={session_id}',
+        'Content-Type': 'application/json',
+        'Content-Length': '100'
+    }
+    bookmark_data = {'url': 'https://rating-default.example', 'title': 'Rating Default'}
+
+    status, response_json, _ = make_request('POST', '/api/bookmarks', body=bookmark_data, headers=headers)
+
+    assert status == 201
+    assert response_json['rating'] == 0
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT rating FROM bookmarks WHERE url = ? AND user_id = ?", ('https://rating-default.example', user_id))
+    assert cursor.fetchone()[0] == 0
+
+
+def test_set_rating_success(test_client):
+    """Tests successfully setting a bookmark's rating via PUT /api/bookmarks/<id>/rating."""
+    make_request, session_id, user_id, conn = test_client
+    headers = {
+        'Cookie': f'session_id={session_id}',
+        'Content-Type': 'application/json',
+    }
+
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO bookmarks (id, url, user_id, rating) VALUES (?, ?, ?, ?)", (301, 'https://rating.example', user_id, 0))
+    conn.commit()
+
+    body = json.dumps({'rating': 3})
+    headers['Content-Length'] = str(len(body))
+
+    status, response_json, _ = make_request('PUT', '/api/bookmarks/301/rating', body=body, headers=headers)
+
+    assert status == 200
+    assert response_json['status'] == 'ok'
+    assert response_json['rating'] == 3
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT rating FROM bookmarks WHERE id = 301")
+    assert cursor.fetchone()[0] == 3
+
+
+def test_set_rating_clamps_out_of_range_values(test_client):
+    """Rating values outside 0-5 should be clamped."""
+    make_request, session_id, user_id, conn = test_client
+    headers = {
+        'Cookie': f'session_id={session_id}',
+        'Content-Type': 'application/json',
+    }
+
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO bookmarks (id, url, user_id, rating) VALUES (?, ?, ?, ?)", (302, 'https://rating-clamp.example', user_id, 0))
+    conn.commit()
+
+    body = json.dumps({'rating': 99})
+    headers['Content-Length'] = str(len(body))
+    status, response_json, _ = make_request('PUT', '/api/bookmarks/302/rating', body=body, headers=headers)
+    assert status == 200
+    assert response_json['rating'] == 5
+
+    body = json.dumps({'rating': -5})
+    headers['Content-Length'] = str(len(body))
+    status, response_json, _ = make_request('PUT', '/api/bookmarks/302/rating', body=body, headers=headers)
+    assert status == 200
+    assert response_json['rating'] == 0
+
+
+def test_set_rating_rejects_invalid_json_body(test_client):
+    """set_rating endpoint should return 400 on malformed JSON payload."""
+    make_request, session_id, user_id, conn = test_client
+    headers = {
+        'Cookie': f'session_id={session_id}',
+        'Content-Type': 'application/json',
+    }
+
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO bookmarks (id, url, user_id, rating) VALUES (?, ?, ?, ?)", (303, 'https://rating-invalid.example', user_id, 0))
+    conn.commit()
+
+    invalid_body = '{"rating":'
+    headers['Content-Length'] = str(len(invalid_body))
+
+    status, response_json, _ = make_request('PUT', '/api/bookmarks/303/rating', body=invalid_body, headers=headers)
+
+    assert status == 400
+    assert response_json is not None
+    assert response_json.get('error') == 'Invalid JSON body'

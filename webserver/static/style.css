@@ -298,6 +298,38 @@ h1 {
     white-space: nowrap;
 }
 
+.star-rating {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 12px;
+}
+
+.star {
+    display: inline-flex;
+    cursor: pointer;
+    color: #d8dde3;
+    transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.star.filled {
+    color: #f5a623;
+    filter: drop-shadow(0 0 1px rgba(245, 166, 35, 0.6));
+    transform: scale(1.08);
+}
+
+.star:hover {
+    color: #f5c15c;
+}
+
+.compact-content .star-rating {
+    margin: 4px 0 0 0;
+}
+
+.compact-content .star svg {
+    width: 13px;
+    height: 13px;
+}
+
 .bookmark-footer {
     display: flex;
     justify-content: space-between;
@@ -701,6 +733,14 @@ html.dark-mode .icon-btn {
 html.dark-mode .icon-btn:hover {
     background-color: #333;
     color: #fff;
+}
+
+html.dark-mode .star {
+    color: #555;
+}
+
+html.dark-mode .star.filled {
+    color: #f5a623;
 }
 
 html.dark-mode .bookmark-footer {
@@ -1370,6 +1410,14 @@ html.dark-mode .icon-btn {
 html.dark-mode .icon-btn:hover {
     background-color: #333;
     color: #fff;
+}
+
+html.dark-mode .star {
+    color: #555;
+}
+
+html.dark-mode .star.filled {
+    color: #f5a623;
 }
 
 html.dark-mode .bookmark-footer {
