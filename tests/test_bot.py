@@ -102,10 +102,11 @@ def test_save_bookmark_integration(bot_instance, db_for_bot):
     url_to_save = "https://test.com/article"
 
     # 2. Call the method to be tested
-    success = bot_instance.save_bookmark(url_to_save, metadata, mock_message)
+    success, reason = bot_instance.save_bookmark(url_to_save, metadata, mock_message)
 
     # 3. Assert the results
     assert success is True
+    assert reason == ""
 
     # 4. Verify the data was actually written to the in-memory database
     cursor = db_for_bot.cursor()

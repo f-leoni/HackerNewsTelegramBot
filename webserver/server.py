@@ -9,7 +9,8 @@ import json
 import csv
 import re
 import logging
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from urllib.parse import urlparse, parse_qs
 import socket
@@ -26,7 +27,7 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 
  
 from shared.utils import extract_domain, get_article_metadata, generate_tags, generate_tags_llm
-from shared.database import get_db_path
+from shared.database import get_db_path, connect_db
 from .htmldata import (
     get_html,
     render_bookmarks,
@@ -48,6 +49,44 @@ logger = logging.getLogger(__name__)
 DB_PATH = get_db_path()
 DEFAULT_PAGE_SIZE = 20 # Default number of bookmarks per page for infinite scrolling
 PORT = 8443
+
+# Simple in-memory brute-force protection for the login form.
+LOGIN_MAX_ATTEMPTS = 10
+LOGIN_WINDOW_SECONDS = 900
+_login_failures = {}
+_login_failures_lock = threading.Lock()
+
+
+def _login_rate_limit_key(client_ip, username):
+    """Builds the rate-limit key for a login attempt."""
+    return f"{client_ip}:{username.lower()}"
+
+
+def _is_login_rate_limited(client_ip, username):
+    """Returns True when too many failed logins happened in the current window."""
+    key = _login_rate_limit_key(client_ip, username)
+    now = datetime.now()
+    with _login_failures_lock:
+        attempts = [ts for ts in _login_failures.get(key, []) if (now - ts).total_seconds() < LOGIN_WINDOW_SECONDS]
+        _login_failures[key] = attempts
+        return len(attempts) >= LOGIN_MAX_ATTEMPTS
+
+
+def _register_login_failure(client_ip, username):
+    """Records a failed login attempt."""
+    key = _login_rate_limit_key(client_ip, username)
+    now = datetime.now()
+    with _login_failures_lock:
+        attempts = [ts for ts in _login_failures.get(key, []) if (now - ts).total_seconds() < LOGIN_WINDOW_SECONDS]
+        attempts.append(now)
+        _login_failures[key] = attempts
+
+
+def _clear_login_failures(client_ip, username):
+    """Clears failed attempts after a successful login."""
+    key = _login_rate_limit_key(client_ip, username)
+    with _login_failures_lock:
+        _login_failures.pop(key, None)
 
 
 def load_local_env(env_path):
@@ -74,31 +113,43 @@ def load_local_env(env_path):
 @contextmanager
 def db_connection():
     """Context manager to handle database connections safely."""
-    conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
+    conn = connect_db(DB_PATH)
     try:
         yield conn.cursor()
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
 SUPPORTED_LANGUAGES = ['en', 'it']
 DEFAULT_LANGUAGE = 'en'
+_translations_cache = {}
 
 def load_translations(lang_code):
-    """Loads the translation dictionary from a JSON file."""
+    """Loads the translation dictionary from a JSON file (cached per language)."""
     # Sanitize lang_code to prevent directory traversal
     lang_code = re.sub(r'[^a-zA-Z_-]', '', lang_code).split('-')[0].lower()
     if lang_code not in SUPPORTED_LANGUAGES:
         lang_code = DEFAULT_LANGUAGE
 
+    if lang_code in _translations_cache:
+        return _translations_cache[lang_code]
+
     filepath = os.path.join(SCRIPT_DIR, 'locales', f'{lang_code}.json')
-    
+
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            translations = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         # Fallback to default language if the file is missing or corrupt
+        if lang_code == DEFAULT_LANGUAGE:
+            return {}
         return load_translations(DEFAULT_LANGUAGE)
+
+    _translations_cache[lang_code] = translations
+    return translations
 
 class BookmarkHandler(BaseHTTPRequestHandler):
     # Override server_version to prevent revealing Python version
@@ -305,13 +356,27 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/html')
         self.end_headers()
 
+    def _cors_origin(self):
+        """Returns the request Origin only when it matches the serving host."""
+        origin = self.headers.get('Origin')
+        host = self.headers.get('Host')
+        if not origin or not host:
+            return None
+        parsed = urlparse(origin)
+        if parsed.netloc and parsed.netloc == host:
+            return f"{parsed.scheme}://{parsed.netloc}"
+        return None
+
     def do_OPTIONS(self):
         """Handles OPTIONS pre-flight requests for CORS."""
         self.send_response(204) # No Content
         self._send_security_headers()
-        self.send_header('Access-Control-Allow-Origin', '*') # Or be more restrictive
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        allowed_origin = self._cors_origin()
+        if allowed_origin:
+            self.send_header('Access-Control-Allow-Origin', allowed_origin)
+            self.send_header('Vary', 'Origin')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         self.end_headers()
 
     def do_HEAD(self):
@@ -329,6 +394,29 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             self._send_error_response(401, "Authentication required")
             return None
         return user_id
+
+    def _get_session_id(self):
+        """Returns the current session id from the request cookie, if any."""
+        cookies = SimpleCookie(self.headers.get('Cookie'))
+        cookie = cookies.get('session_id')
+        return cookie.value if cookie else None
+
+    def _is_secure_request(self):
+        """Returns True when the request is served over HTTPS, also behind a proxy."""
+        forwarded_proto = (self.headers.get('X-Forwarded-Proto') or '').split(',')[0].strip().lower()
+        if forwarded_proto:
+            return forwarded_proto == 'https'
+        return isinstance(getattr(self, 'connection', None), ssl.SSLSocket)
+
+    def _get_client_ip(self):
+        """Returns the best-effort client IP for rate limiting."""
+        forwarded_for = (self.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
+        if forwarded_for:
+            return forwarded_for
+        client_address = getattr(self, 'client_address', None)
+        if client_address:
+            return client_address[0]
+        return 'unknown'
 
     def _parse_bookmark_id_from_parts(self, parts):
         """Parses bookmark id from split API path parts."""
@@ -521,7 +609,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
         """
         logger.info(f"DELETE request for: {self.path}")
 
-        if self._require_authenticated_user() is None:
+        current_user_id = self._require_authenticated_user()
+        if current_user_id is None:
             return
 
         parts = urlparse(self.path).path.strip('/').split('/')
@@ -540,7 +629,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             if bookmark_id is None:
                 return
 
-            self.delete_bookmark(bookmark_id)
+            self.delete_bookmark(bookmark_id, current_user_id)
         else:
             self._send_error_response(404, "Not Found")
 
@@ -579,6 +668,15 @@ class BookmarkHandler(BaseHTTPRequestHandler):
 
             username = credentials.get('username', [''])[0]
             password = credentials.get('password', [''])[0]
+            client_ip = self._get_client_ip()
+
+            if _is_login_rate_limited(client_ip, username):
+                logger.warning("Login rate limit exceeded for user=%s ip=%s", username, client_ip)
+                self._send_html_response(
+                    429,
+                    get_login_page(self, error="Too many failed attempts. Please try again later."),
+                )
+                return
 
             with db_connection() as cursor:
                 # Use NOCASE collation so login is not sensitive to username casing.
@@ -586,6 +684,7 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 user = cursor.fetchone()
 
             if user and check_password_hash(user[1], password):
+                _clear_login_failures(client_ip, username)
                 session_id = secrets.token_hex(16)
                 expires_at = datetime.now() + timedelta(days=30)
 
@@ -599,8 +698,13 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 cookie['session_id'] = session_id
                 cookie['session_id']['path'] = '/'
                 cookie['session_id']['expires'] = expires_at.strftime("%a, %d %b %Y %H:%M:%S GMT")
+                cookie['session_id']['httponly'] = True
+                cookie['session_id']['samesite'] = 'Lax'
+                if self._is_secure_request():
+                    cookie['session_id']['secure'] = True
                 self._redirect('/', extra_headers={'Set-Cookie': cookie.output(header='').lstrip()})
             else:
+                _register_login_failure(client_ip, username)
                 self._send_html_response(401, get_login_page(self, error="Invalid credentials."))
 
         except Exception as e:
@@ -921,6 +1025,18 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                 query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
                 cursor.execute(query, params + [target_user_id])
 
+                # A password change must invalidate existing sessions, otherwise a
+                # stolen cookie outlives the credential rotation.
+                if password is not None:
+                    current_session_id = self._get_session_id()
+                    if current_session_id and current_user_id == target_user_id:
+                        cursor.execute(
+                            "DELETE FROM sessions WHERE user_id = ? AND session_id <> ?",
+                            (target_user_id, current_session_id),
+                        )
+                    else:
+                        cursor.execute("DELETE FROM sessions WHERE user_id = ?", (target_user_id,))
+
             self._send_json_response(200, {'status': 'User updated'})
         except sqlite3.IntegrityError:
             self._send_error_response(409, "Username already exists")
@@ -953,6 +1069,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                         return
 
                 # Keep data consistent even if SQLite foreign keys are disabled.
+                cursor.execute("DELETE FROM telegram_user_links WHERE user_id = ?", (target_user_id,))
+                cursor.execute("DELETE FROM telegram_link_tokens WHERE user_id = ?", (target_user_id,))
                 cursor.execute("DELETE FROM sessions WHERE user_id = ?", (target_user_id,))
                 cursor.execute("DELETE FROM bookmarks WHERE user_id = ?", (target_user_id,))
                 cursor.execute("DELETE FROM users WHERE id = ?", (target_user_id,))
@@ -1323,19 +1441,26 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             logger.error(f"Error exporting HTML: {e}")
             self._send_error_response(500, "Failed to export HTML")
 
-    def delete_bookmark(self, bookmark_id):
+    def delete_bookmark(self, bookmark_id, user_id):
         """
-        Deletes a bookmark from the database given its `bookmark_id`.
+        Deletes a bookmark owned by `user_id`.
 
         Responds with JSON:
                     - 200 {"status": "deleted"} on success
+                    - 404 {"error": "Bookmark not found"} when the row does not
+                      exist or belongs to another user
                     - 500 {"error": "..."} on error
-
-        Opens an SQLite connection, executes DELETE, and closes the connection.
         """
         try:
             with db_connection() as cursor:
-                cursor.execute("DELETE FROM bookmarks WHERE id = ?", (bookmark_id,))
+                cursor.execute(
+                    "DELETE FROM bookmarks WHERE id = ? AND user_id = ?",
+                    (bookmark_id, user_id),
+                )
+                deleted_rows = cursor.rowcount
+            if deleted_rows == 0:
+                self._send_error_response(404, "Bookmark not found")
+                return
             self._send_json_response(200, {"status": "deleted"})
         except sqlite3.Error as e:
             self._send_error_response(500, str(e))
@@ -1485,8 +1610,8 @@ class BookmarkHandler(BaseHTTPRequestHandler):
                         datetime(saved_at, 'localtime') as saved_at,
                         telegram_user_id, telegram_message_id, comments_url, tags,
                         COALESCE(is_read, 0) as is_read, COALESCE(rating, 0) as rating
-                    FROM bookmarks WHERE id = ?
-                """, (bookmark_id,))
+                    FROM bookmarks WHERE id = ? AND user_id = ?
+                """, (bookmark_id, current_user_id))
                 updated_bookmark_tuple = cursor.fetchone()
 
             if not updated_bookmark_tuple:
@@ -1552,6 +1677,10 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             user_id = self.get_current_user()
             with db_connection() as cursor:
                 cursor.execute("UPDATE bookmarks SET is_read = ? WHERE id = ? AND user_id = ?", (int(is_read), bookmark_id, user_id))
+                updated_rows = cursor.rowcount
+            if updated_rows == 0:
+                self._send_error_response(404, "Bookmark not found")
+                return
             self._send_json_response(200, {'status': 'ok', 'is_read': is_read})
 
         except sqlite3.Error as e:
@@ -1594,6 +1723,10 @@ class BookmarkHandler(BaseHTTPRequestHandler):
             user_id = self.get_current_user()
             with db_connection() as cursor:
                 cursor.execute("UPDATE bookmarks SET rating = ? WHERE id = ? AND user_id = ?", (rating, bookmark_id, user_id))
+                updated_rows = cursor.rowcount
+            if updated_rows == 0:
+                self._send_error_response(404, "Bookmark not found")
+                return
             self._send_json_response(200, {'status': 'ok', 'rating': rating})
 
         except sqlite3.Error as e:
@@ -1942,7 +2075,7 @@ def main():
                 create_self_signed_cert(cert_file, key_file)
 
         server_address = ('', port)
-        httpd = HTTPServer(server_address, BookmarkHandler)
+        httpd = ThreadingHTTPServer(server_address, BookmarkHandler)
 
         try:
             context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -1957,7 +2090,7 @@ def main():
         # --- HTTP Mode (Default) ---
         protocol = "http"
         server_address = ('', port)
-        httpd = HTTPServer(server_address, BookmarkHandler)
+        httpd = ThreadingHTTPServer(server_address, BookmarkHandler)
 
     access_url = f"{protocol}://localhost:{port}"
 

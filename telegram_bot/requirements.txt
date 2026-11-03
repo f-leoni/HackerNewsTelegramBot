@@ -1,3 +1,7 @@
-pyrogram
-tgcrypto
-python-dotenv
+pyrogram>=2.0,<3.0
+tgcrypto>=1.2.5
+python-dotenv>=1.0
+
+# Dependencies of shared/utils.py, imported by the bot at runtime
+requests>=2.31.0
+beautifulsoup4>=4.12.0

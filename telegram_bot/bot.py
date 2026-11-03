@@ -5,7 +5,10 @@ import os
 import sys
 import re
 import json
+import time
+import asyncio
 import sqlite3
+import threading
 from pyrogram import Client, filters
 from datetime import datetime
 from urllib.parse import urlparse
@@ -16,7 +19,7 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from shared.database import init_database, get_db_path
+from shared.database import init_database, get_db_path, connect_db
 from shared.utils import get_article_metadata, generate_tags_llm
 import logging
 
@@ -24,6 +27,13 @@ import logging
 __version__ = "1.0"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Guard rails so a single message cannot monopolize the bot.
+MAX_URLS_PER_MESSAGE = 10
+RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMIT_MAX_MESSAGES = 20
+
+UNLINKED_MESSAGE = "Account non collegato. Usa /register e poi /link <token>."
 
 # --- Dynamic import for compatibility ---
 from dotenv import load_dotenv
@@ -77,12 +87,23 @@ class BookmarkBot:
             "yes" if self.api_hash else "no",
         )
 
+        # Pyrogram writes <name>.session in the current working directory unless an
+        # absolute path is given. In Docker that directory is ephemeral, so keep the
+        # session in the mounted volume when it is available.
+        session_dir = os.getenv("SESSION_DIR")
+        if not session_dir:
+            volume_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "session")
+            session_dir = volume_dir if os.path.isdir(volume_dir) else os.path.join(SCRIPT_DIR, ".sessions")
+        os.makedirs(session_dir, exist_ok=True)
+        self.session_name = os.path.join(session_dir, "bookmark_bot_session")
+        logger.info("Pyrogram session path: %s", self.session_name)
+
         # Initialize the Pyrogram client. For Docker, only non-interactive modes are supported.
         if self.bot_token:
             # Bot Mode: use a BOT_TOKEN. Does not require API_ID/HASH except for specific functions.
             logger.info("Auth mode: BOT_TOKEN (bot account)")
             self.app = Client(
-                name="bookmark_bot_session", # Session name for the bot
+                name=self.session_name, # Session name for the bot
                 api_id=self.api_id,
                 api_hash=self.api_hash,
                 bot_token=self.bot_token
@@ -93,7 +114,7 @@ class BookmarkBot:
             if not self.api_id or not self.api_hash:
                 raise ValueError("SESSION_STRING requires API_ID and API_HASH to also be set in the .env file.")
             self.app = Client(
-                name="bookmark_bot_session", # A consistent session name
+                name=self.session_name, # A consistent session name
                 session_string=self.session_string,
                 api_id=self.api_id,
                 api_hash=self.api_hash,
@@ -107,8 +128,45 @@ class BookmarkBot:
         # Initialize database
         init_database() # Ensure the DB and tables exist on startup
 
+        # Per-user rate limiting state (guarded by a lock because handlers may
+        # run concurrently on the event loop).
+        self._rate_windows = {}
+        self._rate_lock = threading.Lock()
+
         # Register handlers
         self.setup_handlers()
+
+    def _consume_rate_limit(self, telegram_user_id):
+        """Sliding-window rate limit: True when the user may send another message."""
+        if telegram_user_id is None:
+            return True
+        now = time.monotonic()
+        with self._rate_lock:
+            timestamps = [
+                ts for ts in self._rate_windows.get(telegram_user_id, [])
+                if now - ts < RATE_LIMIT_WINDOW_SECONDS
+            ]
+            if len(timestamps) >= RATE_LIMIT_MAX_MESSAGES:
+                self._rate_windows[telegram_user_id] = timestamps
+                return False
+            timestamps.append(now)
+            self._rate_windows[telegram_user_id] = timestamps
+        return True
+
+    def _get_linked_web_user_id(self, telegram_user_id):
+        """Synchronously resolves the web user linked to a Telegram user."""
+        if telegram_user_id is None:
+            return None
+        conn = None
+        try:
+            conn = connect_db()
+            return self._resolve_web_user_id(conn.cursor(), telegram_user_id)
+        except sqlite3.Error as e:
+            logger.error("Error resolving web user for telegram id %s: %s", telegram_user_id, e)
+            return None
+        finally:
+            if conn:
+                conn.close()
 
     def _parse_db_datetime(self, raw_value):
         """Parses datetime values returned by SQLite into a datetime object."""
@@ -236,27 +294,28 @@ class BookmarkBot:
 
     def save_bookmark(self, url, metadata, message, comments_url_override=None):
         """
-        Saves a URL as a bookmark in the database with metadata.
+        Saves a URL as a bookmark for the web user linked to the Telegram sender.
 
-        Stores the URL, metadata (title, description etc.), message info and optional
-        comments URL in the bookmarks database. Associates the bookmark with the first
-        web user found in the database.
-
-        Args:
-            url (str): The URL to bookmark.
-            metadata (dict): Metadata for the URL (title, description etc.).
-            message (Message): The Telegram message containing the URL.
-            comments_url_override (str, optional): Override the auto-detected comments URL.
+        Existing bookmarks with the same URL keep their read flag and rating:
+        only the scraped metadata is refreshed.
 
         Returns:
-            bool: True if bookmark was saved successfully, False otherwise.
+            tuple[bool, str]: (True, "") on success, otherwise (False, reason)
+            where reason is "unlinked", "locked" or "generic".
         """
         db_path = get_db_path()
         conn = None
         try:
-            conn = sqlite3.connect(db_path, uri=db_path.startswith('file:'))
+            conn = connect_db(db_path)
             cursor = conn.cursor()
             from_user_id = getattr(message.from_user, "id", None)
+
+            # Authorize before doing any network or LLM work.
+            web_user_id = self._resolve_web_user_id(cursor, from_user_id)
+            if not web_user_id:
+                logger.error("Telegram user %s is not linked to a web user. Cannot save bookmark.", from_user_id)
+                return False, "unlinked"
+
             comments_url = comments_url_override if comments_url_override is not None else self.get_hn_comments_url(url)
             tags = generate_tags_llm(
                 metadata.get("title", ""),
@@ -265,18 +324,20 @@ class BookmarkBot:
             )
             metadata["tags"] = tags
 
-            web_user_id = self._resolve_web_user_id(cursor, from_user_id)
-
-            if not web_user_id:
-                logger.error("Telegram user %s is not linked to a web user. Cannot save bookmark.", from_user_id)
-                self._last_save_error = "unlinked"
-                return False
-
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO bookmarks 
+                INSERT INTO bookmarks 
                 (user_id, url, title, description, image_url, domain, tags, telegram_user_id, telegram_message_id, comments_url)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, url) DO UPDATE SET
+                    title = excluded.title,
+                    description = excluded.description,
+                    image_url = excluded.image_url,
+                    domain = excluded.domain,
+                    tags = excluded.tags,
+                    telegram_user_id = excluded.telegram_user_id,
+                    telegram_message_id = excluded.telegram_message_id,
+                    comments_url = excluded.comments_url
             """,
                 (
                     web_user_id,
@@ -292,13 +353,17 @@ class BookmarkBot:
                 ),
             )
             conn.commit()
-            self._last_save_error = None
-            logger.info(f"Bookmark saved: {metadata['title']}")
-            return True
-        except Exception as e:
-            self._last_save_error = "generic"
+            logger.info(f"Bookmark saved for user {web_user_id}: {metadata['title']}")
+            return True, ""
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e).lower() or "busy" in str(e).lower():
+                logger.error("Database locked while saving bookmark: %s", e)
+                return False, "locked"
             logger.error(f"Error saving bookmark: {e}")
-            return False
+            return False, "generic"
+        except Exception as e:
+            logger.error(f"Error saving bookmark: {e}")
+            return False, "generic"
         finally:
             if conn:
                 conn.close()
@@ -314,7 +379,7 @@ class BookmarkBot:
         The handlers extract URLs from messages and save them as bookmarks.
         """
 
-        @self.app.on_message(filters.private & ~filters.command(["count", "help", "register", "link", "whoami", "unlink"]))
+        @self.app.on_message(filters.private & ~filters.command(["start", "count", "help", "register", "link", "whoami", "unlink"]))
         async def handle_private_message(client, message):
             """Handler for messages in saved messages
             
@@ -367,7 +432,7 @@ class BookmarkBot:
             db_path = get_db_path()
             conn = None
             try:
-                conn = sqlite3.connect(db_path)
+                conn = connect_db(db_path)
                 cursor = conn.cursor()
 
                 telegram_user_id = getattr(getattr(message, 'from_user', None), 'id', None)
@@ -412,10 +477,15 @@ class BookmarkBot:
                 return
 
             token = parts[1].strip()
+
+            if not self._consume_rate_limit(telegram_user_id):
+                await message.reply("Troppi tentativi di collegamento. Attendi qualche minuto e riprova.")
+                return
+
             db_path = get_db_path()
             conn = None
             try:
-                conn = sqlite3.connect(db_path)
+                conn = connect_db(db_path)
                 cursor = conn.cursor()
                 ok, response_message = self._consume_link_token(cursor, token, telegram_user_id)
                 if ok:
@@ -437,7 +507,7 @@ class BookmarkBot:
             db_path = get_db_path()
             conn = None
             try:
-                conn = sqlite3.connect(db_path)
+                conn = connect_db(db_path)
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -467,7 +537,7 @@ class BookmarkBot:
             db_path = get_db_path()
             conn = None
             try:
-                conn = sqlite3.connect(db_path)
+                conn = connect_db(db_path)
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM telegram_user_links WHERE telegram_user_id = ?", (telegram_user_id,))
                 if cursor.rowcount > 0:
@@ -481,6 +551,26 @@ class BookmarkBot:
             finally:
                 if conn:
                     conn.close()
+
+        @self.app.on_message(filters.command("start") & filters.private)
+        async def handle_start_command(client, message):
+            """Handles /start with a short onboarding message and link status."""
+            telegram_user_id = getattr(getattr(message, 'from_user', None), 'id', None)
+            web_user_id = await asyncio.to_thread(self._get_linked_web_user_id, telegram_user_id)
+            if web_user_id is None:
+                await message.reply(
+                    "👋 Benvenuto!\n\n"
+                    "Per usare il bot devi collegare il tuo account Telegram a un utente web:\n"
+                    "1) Chiedi a un admin un token di collegamento.\n"
+                    "2) Invia qui: /link <token>\n\n"
+                    f"Il tuo Telegram ID: {telegram_user_id}"
+                )
+                return
+            await message.reply(
+                "👋 Benvenuto! Il tuo account è già collegato.\n"
+                "Inviami un link e lo salverò tra i tuoi bookmark.\n"
+                "Usa /help per l'elenco dei comandi."
+            )
 
         @self.app.on_message(filters.command("help") & filters.private)
         async def handle_help_command(client, message):
@@ -524,6 +614,20 @@ class BookmarkBot:
         """
         logger.info("--> Entered process_message_for_urls")
 
+        from_user_id = getattr(getattr(message, "from_user", None), "id", None)
+
+        # Authorize before any scraping/tagging work: unlinked users must not be
+        # able to use the bot as a scraping proxy.
+        web_user_id = await asyncio.to_thread(self._get_linked_web_user_id, from_user_id)
+        if web_user_id is None:
+            logger.info("Telegram user %s is not linked; skipping processing.", from_user_id)
+            await message.reply(UNLINKED_MESSAGE)
+            return
+
+        if not self._consume_rate_limit(from_user_id):
+            await message.reply("Stai inviando troppi link. Attendi qualche minuto e riprova.")
+            return
+
         # Search for URLs in the message (supports text, captions, and web_page)
         urls = []
 
@@ -560,6 +664,13 @@ class BookmarkBot:
         # Process each found URL (removing duplicates)
         if urls:
             unique_urls = sorted(list(set(urls)))
+            if len(unique_urls) > MAX_URLS_PER_MESSAGE:
+                logger.info("Message contains %d URLs; limiting to %d", len(unique_urls), MAX_URLS_PER_MESSAGE)
+                await message.reply(
+                    f"Ho ricevuto {len(unique_urls)} link, salvo solo i primi {MAX_URLS_PER_MESSAGE}."
+                )
+                unique_urls = unique_urls[:MAX_URLS_PER_MESSAGE]
+
             logger.info("Found %d unique URLs: %s", len(unique_urls), unique_urls)
             
             # Logic to pair article links and HN comments
@@ -581,8 +692,8 @@ class BookmarkBot:
                 # Special case: a single bookmark for the article + HN comments pair
                 logger.info(f"---> Hacker News pattern detected: Article={article_url}, Comments={hn_url}")
                 # Extract metadata from the article and the HN page using the shared function
-                article_metadata = get_article_metadata(article_url)
-                hn_metadata = get_article_metadata(hn_url)
+                article_metadata = await asyncio.to_thread(get_article_metadata, article_url)
+                hn_metadata = await asyncio.to_thread(get_article_metadata, hn_url)
 
                 # Merge the information: description from HN, the rest from the article
                 metadata = article_metadata
@@ -590,7 +701,9 @@ class BookmarkBot:
                     metadata["description"] = hn_metadata["description"]
 
                 logger.info(f"---> Saving single bookmark to DB...")
-                success = self.save_bookmark(article_url, metadata, message, comments_url_override=hn_url)
+                success, reason = await asyncio.to_thread(
+                    self.save_bookmark, article_url, metadata, message, hn_url
+                )
                 # If saving is successful, send the reply and exit
                 # to avoid processing the links individually.
                 if success:
@@ -599,18 +712,20 @@ class BookmarkBot:
                         f"📖 **HN Bookmark saved!**\n📰 {metadata['title']}\n🔗 {metadata['domain']}{tags_line}"
                     )
                     return # We are done, exit the function
-                if self._last_save_error == "unlinked":
-                    await message.reply("Account non collegato. Usa /register e poi /link <token>.")
+                if reason == "unlinked":
+                    await message.reply(UNLINKED_MESSAGE)
                     return
 
             # Previous logic for all other cases (single or multiple non-HN links)
             saved_count = 0
             saved_metadata = []
+            last_reason = ""
             for url in unique_urls:
                 logger.info(f"---> Processing URL: {url}")
-                metadata = get_article_metadata(url)
+                metadata = await asyncio.to_thread(get_article_metadata, url)
                 logger.info(f"---> Saving bookmark to DB...")
-                success = self.save_bookmark(url, metadata, message)
+                success, reason = await asyncio.to_thread(self.save_bookmark, url, metadata, message)
+                last_reason = reason
                 if success:
                     saved_count += 1
                     saved_metadata.append(metadata)
@@ -629,59 +744,14 @@ class BookmarkBot:
                     tags_block = "\n🏷️ Tags:\n" + "\n".join(tags_summary) if tags_summary else ""
                     reply_text = f"📖 **Saved {saved_count} bookmarks!**{tags_block}"
                 await message.reply(reply_text)
-            elif self._last_save_error == "unlinked":
-                await message.reply("Account non collegato. Usa /register e poi /link <token>.")
+            elif last_reason == "unlinked":
+                await message.reply(UNLINKED_MESSAGE)
+            elif last_reason == "locked":
+                await message.reply("Database occupato, riprova tra qualche secondo. Nessun bookmark è stato salvato.")
+            else:
+                await message.reply("Non sono riuscito a salvare i bookmark. Riprova tra poco.")
         else:
             logger.info("--> No URL found in the message. End of processing.")
-
-    def export_bookmarks_html(self, filename="bookmarks.html"):
-        """Exports bookmarks to HTML format"""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM bookmarks ORDER BY saved_at DESC")
-        bookmarks = cursor.fetchall()
-
-        html_content = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>My Telegram Bookmarks</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .bookmark { margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
-        .title { font-weight: bold; font-size: 18px; margin-bottom: 5px; }
-        .description { color: #666; margin-bottom: 10px; }
-        .meta { font-size: 12px; color: #999; }
-        .url { word-break: break-all; }
-    </style>
-</head>
-<body>
-    <h1>📖 My Telegram Bookmarks</h1>
-"""
-
-        for bookmark in bookmarks:
-            html_content += f"""
-    <div class="bookmark">
-        <div class="title"><a href="{bookmark[1]}" target="_blank">{bookmark[2]}</a></div>
-        <div class="description">{bookmark[3]}</div>
-        <div class="meta">
-            <strong>Dominio:</strong> {bookmark[5]} | 
-            <strong>Salvato:</strong> {bookmark[6]} |
-            <strong>URL:</strong> <span class="url">{bookmark[1]}</span>
-        </div>
-    </div>
-"""
-
-        html_content += """
-</body>
-</html>
-"""
-
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(html_content)
-
-        logger.info(f"Bookmarks exported to {filename}")
-        return filename
 
     def run(self):
         """Start the bot with error handling for time sync issues."""
@@ -701,9 +771,6 @@ class BookmarkBot:
 if __name__ == "__main__":
     try:
         bot = BookmarkBot()
-
-        # Export existing bookmarks (optional)
-        # bot.export_bookmarks_html()
 
         # Start the bot
         bot.run()

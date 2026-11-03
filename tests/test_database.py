@@ -82,3 +82,88 @@ def test_init_database_creates_all_columns(mock_db_path):
     bookmark_columns = {row[1] for row in cursor.fetchall()}
     expected_bookmark_columns = {'id', 'user_id', 'url', 'title', 'description', 'image_url', 'domain', 'saved_at', 'telegram_user_id', 'telegram_message_id', 'comments_url', 'is_read', 'rating'}
     assert expected_bookmark_columns.issubset(bookmark_columns)
+
+
+def _legacy_bookmarks_connection():
+    """Builds an in-memory DB shaped like the pre-constraint multi-user schema.
+
+    This is the state left behind by `ALTER TABLE ... ADD COLUMN user_id` plus the
+    backfill script: two users, duplicates allowed, no UNIQUE(user_id, url), no FK.
+    """
+    conn = sqlite3.connect("file:memdb_legacy?mode=memory&cache=shared", uri=True, detect_types=sqlite3.PARSE_DECLTYPES)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE bookmarks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            url TEXT NOT NULL,
+            title TEXT,
+            description TEXT,
+            image_url TEXT,
+            domain TEXT,
+            tags TEXT,
+            saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            telegram_user_id INTEGER,
+            telegram_message_id INTEGER,
+            comments_url TEXT,
+            is_read INTEGER DEFAULT 0,
+            rating INTEGER DEFAULT 0
+        )
+    """)
+    cursor.execute("INSERT INTO users (username, password_hash) VALUES ('legacy', 'hash')")
+    # Duplicate (user_id, url) pairs that the rebuild must collapse.
+    cursor.execute("INSERT INTO bookmarks (user_id, url) VALUES (1, 'https://legacy.example/dup')")
+    cursor.execute("INSERT INTO bookmarks (user_id, url) VALUES (1, 'https://legacy.example/dup')")
+    cursor.execute("INSERT INTO bookmarks (user_id, url) VALUES (1, 'https://legacy.example/other')")
+    conn.commit()
+    return conn
+
+
+def test_legacy_schema_gets_tenant_constraints():
+    """An upgraded DB must end up with UNIQUE(user_id, url) and collapsed duplicates."""
+    conn = _legacy_bookmarks_connection()
+    try:
+        init_database(conn)
+        cursor = conn.cursor()
+
+        cursor.execute("PRAGMA index_list(bookmarks)")
+        unique_indexes = [
+            row[1] for row in cursor.fetchall() if row[2]
+        ]
+        assert unique_indexes, "bookmarks should have a UNIQUE index after migration"
+
+        cursor.execute("SELECT COUNT(*) FROM bookmarks")
+        assert cursor.fetchone()[0] == 2
+
+        # The constraint is now enforced.
+        with pytest.raises(sqlite3.IntegrityError):
+            cursor.execute("INSERT INTO bookmarks (user_id, url) VALUES (1, 'https://legacy.example/dup')")
+        conn.rollback()
+    finally:
+        conn.close()
+
+
+def test_init_database_is_idempotent_on_migrated_schema():
+    """Running init_database twice must not rebuild or duplicate anything."""
+    conn = _legacy_bookmarks_connection()
+    try:
+        init_database(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM bookmarks")
+        first_count = cursor.fetchone()[0]
+
+        init_database(conn)
+        cursor.execute("SELECT COUNT(*) FROM bookmarks")
+        assert cursor.fetchone()[0] == first_count
+
+        cursor.execute("PRAGMA user_version")
+        assert cursor.fetchone()[0] == 2
+    finally:
+        conn.close()

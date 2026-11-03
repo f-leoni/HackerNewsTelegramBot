@@ -173,17 +173,46 @@ def test_login_invalid_content_length_returns_400(test_client):
     assert 'Invalid login request.' in response_body
 
 
-def test_options_includes_security_and_cors_headers(test_client):
-    """OPTIONS response should include both CORS and security headers."""
+def test_options_includes_security_headers(test_client):
+    """OPTIONS response must include security headers and no wildcard CORS."""
     make_request, _, _, _ = test_client
 
     status, _, _, response_headers = make_request('OPTIONS', '/api/bookmarks', return_headers=True)
 
     assert status == 204
-    assert response_headers.get('Access-Control-Allow-Origin') == '*'
-    assert response_headers.get('Access-Control-Allow-Methods') == 'GET, POST, PUT, DELETE, OPTIONS'
-    assert response_headers.get('Access-Control-Allow-Headers') == 'Content-Type, Authorization'
+    assert 'Access-Control-Allow-Origin' not in response_headers
     assert 'Content-Security-Policy' in response_headers
+
+
+def test_options_rejects_foreign_origin(test_client):
+    """CORS headers must not be emitted for a different origin."""
+    make_request, _, _, _ = test_client
+
+    status, _, _, response_headers = make_request(
+        'OPTIONS',
+        '/api/bookmarks',
+        headers={'Origin': 'https://evil.example', 'Host': 'localhost:8443'},
+        return_headers=True,
+    )
+
+    assert status == 204
+    assert 'Access-Control-Allow-Origin' not in response_headers
+
+
+def test_options_allows_same_origin(test_client):
+    """CORS headers are echoed only for the serving origin."""
+    make_request, _, _, _ = test_client
+
+    status, _, _, response_headers = make_request(
+        'OPTIONS',
+        '/api/bookmarks',
+        headers={'Origin': 'https://localhost:8443', 'Host': 'localhost:8443'},
+        return_headers=True,
+    )
+
+    assert status == 204
+    assert response_headers.get('Access-Control-Allow-Origin') == 'https://localhost:8443'
+    assert response_headers.get('Access-Control-Allow-Methods') == 'GET, POST, PUT, DELETE, OPTIONS'
 
 
 # --- API Endpoint Tests ---
@@ -452,3 +481,196 @@ def test_set_rating_rejects_invalid_json_body(test_client):
     assert status == 400
     assert response_json is not None
     assert response_json.get('error') == 'Invalid JSON body'
+
+
+# --- Multi-user isolation tests ---
+
+def _create_second_user(conn, user_id=2, username='seconduser', role='user'):
+    """Creates an extra user plus a valid session in the shared in-memory DB."""
+    from datetime import datetime, timedelta
+    from werkzeug.security import generate_password_hash as _hash
+
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT OR IGNORE INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
+        (user_id, username, _hash('password123'), role),
+    )
+    session_id = f"session-user-{user_id}"
+    cursor.execute(
+        "INSERT OR IGNORE INTO sessions (session_id, user_id, expires_at) VALUES (?, ?, ?)",
+        (session_id, user_id, datetime.now() + timedelta(days=1)),
+    )
+    conn.commit()
+    return session_id
+
+
+def _insert_bookmark(conn, bookmark_id, user_id, url):
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO bookmarks (id, url, user_id) VALUES (?, ?, ?)",
+        (bookmark_id, url, user_id),
+    )
+    conn.commit()
+
+
+def test_delete_bookmark_of_another_user_returns_404(test_client):
+    """A user must not be able to delete another user's bookmark."""
+    make_request, session_id, user_id, conn = test_client
+    other_session = _create_second_user(conn)
+    _insert_bookmark(conn, 401, user_id, 'https://idor-delete.example')
+
+    status, _, _ = make_request(
+        'DELETE', '/api/bookmarks/401', headers={'Cookie': f'session_id={other_session}'}
+    )
+
+    assert status == 404
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM bookmarks WHERE id = 401")
+    assert cursor.fetchone()[0] == 1
+
+    # The legitimate owner can still delete it.
+    status, _, _ = make_request(
+        'DELETE', '/api/bookmarks/401', headers={'Cookie': f'session_id={session_id}'}
+    )
+    assert status == 200
+
+
+def test_update_bookmark_of_another_user_returns_404(test_client):
+    """PUT on a bookmark owned by another user must not modify it."""
+    make_request, _, user_id, conn = test_client
+    other_session = _create_second_user(conn)
+    _insert_bookmark(conn, 402, user_id, 'https://idor-update.example')
+
+    body = json.dumps({'title': 'Hijacked'})
+    headers = {
+        'Cookie': f'session_id={other_session}',
+        'Content-Type': 'application/json',
+        'Content-Length': str(len(body)),
+    }
+    status, _, _ = make_request('PUT', '/api/bookmarks/402', body=body, headers=headers)
+
+    assert status == 404
+    cursor = conn.cursor()
+    cursor.execute("SELECT title FROM bookmarks WHERE id = 402")
+    assert cursor.fetchone()[0] is None
+
+
+def test_mark_read_of_another_user_returns_404(test_client):
+    """Read flag must be scoped to the bookmark owner."""
+    make_request, _, user_id, conn = test_client
+    other_session = _create_second_user(conn)
+    _insert_bookmark(conn, 403, user_id, 'https://idor-read.example')
+
+    body = json.dumps({'is_read': True})
+    headers = {
+        'Cookie': f'session_id={other_session}',
+        'Content-Type': 'application/json',
+        'Content-Length': str(len(body)),
+    }
+    status, _, _ = make_request('PUT', '/api/bookmarks/403/read', body=body, headers=headers)
+
+    assert status == 404
+    cursor = conn.cursor()
+    cursor.execute("SELECT COALESCE(is_read, 0) FROM bookmarks WHERE id = 403")
+    assert cursor.fetchone()[0] == 0
+
+
+def test_set_rating_of_another_user_returns_404(test_client):
+    """Rating must be scoped to the bookmark owner."""
+    make_request, _, user_id, conn = test_client
+    other_session = _create_second_user(conn)
+    _insert_bookmark(conn, 4031, user_id, 'https://idor-rating.example')
+
+    body = json.dumps({'rating': 5})
+    headers = {
+        'Cookie': f'session_id={other_session}',
+        'Content-Type': 'application/json',
+        'Content-Length': str(len(body)),
+    }
+    status, _, _ = make_request('PUT', '/api/bookmarks/4031/rating', body=body, headers=headers)
+
+    assert status == 404
+    cursor = conn.cursor()
+    cursor.execute("SELECT COALESCE(rating, 0) FROM bookmarks WHERE id = 4031")
+    assert cursor.fetchone()[0] == 0
+
+
+def test_bookmark_list_is_user_scoped(test_client):
+    """The list endpoint must not expose other users' bookmarks."""
+    make_request, _, user_id, conn = test_client
+    other_session = _create_second_user(conn)
+    _insert_bookmark(conn, 404, user_id, 'https://scoped-list.example')
+
+    status, response_json, _ = make_request(
+        'GET', '/api/bookmarks', headers={'Cookie': f'session_id={other_session}'}
+    )
+
+    assert status == 200
+    assert response_json == []
+
+
+def test_export_is_user_scoped(test_client):
+    """CSV export must only contain the caller's bookmarks."""
+    make_request, _, user_id, conn = test_client
+    other_session = _create_second_user(conn)
+    _insert_bookmark(conn, 405, user_id, 'https://scoped-export.example')
+
+    status, _, body = make_request(
+        'GET', '/api/export/csv', headers={'Cookie': f'session_id={other_session}'}
+    )
+
+    assert status == 200
+    assert 'scoped-export.example' not in body
+
+
+def test_same_url_can_be_saved_by_two_users(test_client):
+    """URL uniqueness is per user, not global."""
+    make_request, _, _, conn = test_client
+    other_session = _create_second_user(conn)
+    body = json.dumps({'url': 'https://shared-url.example/article'})
+
+    headers = {
+        'Cookie': f'session_id={other_session}',
+        'Content-Type': 'application/json',
+        'Content-Length': str(len(body)),
+    }
+    first_status, _, _ = make_request('POST', '/api/bookmarks', body=body, headers=headers)
+    second_status, _, _ = make_request('POST', '/api/bookmarks', body=body, headers=headers)
+
+    assert first_status == 201
+    assert second_status == 409  # same user, same URL
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM bookmarks WHERE url = ?", ('https://shared-url.example/article',))
+    assert cursor.fetchone()[0] == 1
+
+
+def test_non_admin_cannot_list_users(test_client):
+    """User management endpoints must be admin-only."""
+    make_request, _, _, conn = test_client
+    other_session = _create_second_user(conn)
+
+    status, _, _ = make_request(
+        'GET', '/api/users', headers={'Cookie': f'session_id={other_session}'}
+    )
+
+    assert status == 403
+
+
+def test_login_cookie_is_hardened(test_client):
+    """The session cookie must be HttpOnly and SameSite=Lax."""
+    make_request, _, _, _ = test_client
+    body = 'username=testuser&password=password123'
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': str(len(body)),
+        'Host': 'localhost:8443',
+    }
+
+    status, _, _, response_headers = make_request(
+        'POST', '/login', body=body, headers=headers, return_headers=True
+    )
+
+    assert status == 302
+    set_cookie = response_headers.get('Set-Cookie', '')
+    assert 'HttpOnly' in set_cookie
+    assert 'SameSite=Lax' in set_cookie
