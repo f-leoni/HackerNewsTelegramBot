@@ -9,9 +9,11 @@ import time
 import asyncio
 import sqlite3
 import threading
-from pyrogram import Client, filters
 from datetime import datetime
 from urllib.parse import urlparse
+from pyrogram import filters
+from pyrogram.client import Client
+from pyrogram.enums import ChatType, MessageEntityType
 
 # Ensure project root is importable when launched as a script (e.g. under systemd)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +26,7 @@ from shared.utils import get_article_metadata, generate_tags_llm
 import logging
 
 # Setup logging
-__version__ = "2.0.0"
+__version__ = "2.0.2"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -33,11 +35,15 @@ MAX_URLS_PER_MESSAGE = 10
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_MESSAGES = 20
 
-UNLINKED_MESSAGE = "Account non collegato. Usa /register e poi /link <token>."
+# Telegram parses the text as HTML/Markdown by default: a placeholder wrapped in
+# angle brackets is treated as an unknown tag and removed from the visible message.
+# Keep user-facing placeholders free of angle brackets.
+LINK_USAGE = "/link TOKEN"
+
+UNLINKED_MESSAGE = f"Account non collegato. Usa /register e poi {LINK_USAGE}."
 
 # --- Dynamic import for compatibility ---
 from dotenv import load_dotenv
-from pyrogram.enums import ChatType, MessageEntityType
 
 # Search for StringSession in common paths to support different Pyrogram versions
 StringSession = None
@@ -58,7 +64,7 @@ class BookmarkBot:
     
     Attributes:
         app (Client): The Pyrogram client instance used to interact with Telegram.
-        _me_id (int): Cached user ID of the running client (set after first lookup).
+        _my_user_id (int | None): Cached user ID of the running client (set after first lookup).
     """
 
     def __init__(self):
@@ -72,8 +78,8 @@ class BookmarkBot:
         except Exception:
             pass
 
-        self.api_id = os.getenv("API_ID")
-        self.api_hash = os.getenv("API_HASH")
+        raw_api_id = os.getenv("API_ID")
+        raw_api_hash = os.getenv("API_HASH")
         # Optional credentials: BOT_TOKEN for bot account, or SESSION_STRING to avoid interactive login
         self.bot_token = os.getenv("BOT_TOKEN")
         self.session_string = os.getenv("SESSION_STRING")
@@ -83,9 +89,18 @@ class BookmarkBot:
             "Auth env presence: BOT_TOKEN=%s, SESSION_STRING=%s, API_ID=%s, API_HASH=%s",
             "yes" if self.bot_token else "no",
             "yes" if self.session_string else "no",
-            "yes" if self.api_id else "no",
-            "yes" if self.api_hash else "no",
+            "yes" if raw_api_id else "no",
+            "yes" if raw_api_hash else "no",
         )
+
+        # Pyrogram requires API_ID and API_HASH in every authentication mode.
+        if not raw_api_id or not raw_api_hash:
+            raise ValueError("API_ID and API_HASH must be set in the .env file.")
+        try:
+            self.api_id = int(raw_api_id)
+        except ValueError as exc:
+            raise ValueError("API_ID must be a numeric value.") from exc
+        self.api_hash = raw_api_hash
 
         # Pyrogram writes <name>.session in the current working directory unless an
         # absolute path is given. In Docker that directory is ephemeral, so keep the
@@ -111,8 +126,6 @@ class BookmarkBot:
         elif self.session_string:
             # Non-interactive User Mode: use a SESSION_STRING.
             logger.info("Auth mode: SESSION_STRING (user session)")
-            if not self.api_id or not self.api_hash:
-                raise ValueError("SESSION_STRING requires API_ID and API_HASH to also be set in the .env file.")
             self.app = Client(
                 name=self.session_name, # A consistent session name
                 session_string=self.session_string,
@@ -127,6 +140,9 @@ class BookmarkBot:
 
         # Initialize database
         init_database() # Ensure the DB and tables exist on startup
+
+        # Cached identity of the running client (resolved lazily on first message).
+        self._my_user_id = None
 
         # Per-user rate limiting state (guarded by a lock because handlers may
         # run concurrently on the event loop).
@@ -405,7 +421,7 @@ class BookmarkBot:
                 logger.info("Incoming message received (could not serialize fields)")
 
             # Store the user/bot ID on the first call (necessary for user mode)
-            if not hasattr(self, "_my_user_id") or self._my_user_id is None:
+            if self._my_user_id is None:
                 me = await client.get_me()
                 self._my_user_id = me.id
                 logger.info("Running as user: %s (ID: %s)", getattr(me, 'username', 'N/A'), me.id)
@@ -442,7 +458,7 @@ class BookmarkBot:
 
                 web_user_id = self._resolve_web_user_id(cursor, telegram_user_id)
                 if web_user_id is None:
-                    await message.reply("Il tuo account Telegram non e collegato. Usa /register e poi /link <token>.")
+                    await message.reply(f"Il tuo account Telegram non e collegato. Usa /register e poi {LINK_USAGE}.")
                     return
 
                 cursor.execute("SELECT COUNT(*) FROM bookmarks WHERE user_id = ?", (web_user_id,))
@@ -461,7 +477,7 @@ class BookmarkBot:
             text = (
                 "Per collegare il tuo account Telegram al webserver:\n"
                 "1) Chiedi a un admin di generare un token di collegamento.\n"
-                "2) Invia qui: /link <token>\n\n"
+                f"2) Invia qui: {LINK_USAGE}\n\n"
                 f"Il tuo Telegram ID: {telegram_user_id}"
             )
             await message.reply(text)
@@ -473,7 +489,7 @@ class BookmarkBot:
             text = (message.text or '').strip()
             parts = text.split(maxsplit=1)
             if len(parts) < 2 or not parts[1].strip():
-                await message.reply("Uso corretto: /link <token>")
+                await message.reply(f"Uso corretto: {LINK_USAGE}")
                 return
 
             token = parts[1].strip()
@@ -520,7 +536,7 @@ class BookmarkBot:
                 )
                 row = cursor.fetchone()
                 if not row:
-                    await message.reply("Nessun collegamento attivo. Usa /register e poi /link <token>.")
+                    await message.reply(f"Nessun collegamento attivo. Usa /register e poi {LINK_USAGE}.")
                     return
                 await message.reply(f"Collegato a: {row[0]} (ruolo: {row[1]})")
             except Exception as e:
@@ -562,7 +578,7 @@ class BookmarkBot:
                     "👋 Benvenuto!\n\n"
                     "Per usare il bot devi collegare il tuo account Telegram a un utente web:\n"
                     "1) Chiedi a un admin un token di collegamento.\n"
-                    "2) Invia qui: /link <token>\n\n"
+                    f"2) Invia qui: {LINK_USAGE}\n\n"
                     f"Il tuo Telegram ID: {telegram_user_id}"
                 )
                 return
@@ -585,9 +601,10 @@ class BookmarkBot:
                 "If you send a link to an article and a link to the HackerNews comments "
                 "in the same message, I will link them into a single bookmark.\n\n"
                 "🤖 **Available commands**\n"
+                "- `/start`: Shows the welcome message and your linking status.\n"
                 "- `/count`: Shows the total number of bookmarks you have saved.\n"
                 "- `/register`: Shows instructions to link your Telegram account.\n"
-                "- `/link <token>`: Links your Telegram account to your web user.\n"
+                "- `/link TOKEN`: Links your Telegram account to your web user.\n"
                 "- `/whoami`: Shows your current account mapping.\n"
                 "- `/unlink`: Removes your current account mapping.\n"
                 "- `/help`: Shows this help message.\n\n"

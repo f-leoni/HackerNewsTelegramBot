@@ -3,6 +3,29 @@
 Il progetto usa tre numeri di versione indipendenti: webserver, bot Telegram e schema database.
 Lo schema è tracciato anche in `PRAGMA user_version`.
 
+## bot 2.0.2 — 2026-11-06
+
+- `API_ID` e `API_HASH` sono ora obbligatori e validati all'avvio in ogni modalità di autenticazione
+  (Pyrogram li richiede sempre): `API_ID` viene convertito in intero con messaggio d'errore chiaro.
+- Dichiarato `_my_user_id` in `__init__` invece di crearlo dinamicamente nel primo handler.
+- Import di `Client` dal modulo che lo definisce (`pyrogram.client`).
+
+## webserver 3.0.1 — 2026-11-06
+
+- Corretto il pulsante **Edit** che non apriva il modal quando titolo o descrizione contenevano un
+  doppio apice o un backslash: l'escaping per l'attributo HTML raddoppiava i backslash, rompendo le
+  sequenze JSON (`\"`) e facendo fallire `JSON.parse`.
+- `openEdit` accetta sia la stringa JSON sia un oggetto già interpretato, quindi i bookmark
+  ri-renderizzati lato client dopo un salvataggio non perdono più la modifica.
+
+## bot 2.0.1 — 2026-11-06
+
+- I messaggi del bot non usano più segnaposto tra parentesi angolari: Pyrogram invia il testo con
+  parsing HTML/Markdown, quindi `/link <token>` perdeva `<token>` e mostrava solo `Uso corretto: /link`.
+  Ora il segnaposto è `/link TOKEN` in `/start`, `/register`, `/link`, `/whoami`, `/count`, `/help`
+  e nel messaggio di account non collegato.
+- Aggiunto `/start` all'elenco comandi di `/help`.
+
 ## webserver 3.0.0 · bot 2.0.0 · schema DB 2 — 2026-11-06
 
 Release multi-utente. **Breaking**: aggiornare bot e webserver insieme.

@@ -1,4 +1,5 @@
 import pytest
+import json
 from unittest.mock import Mock
 from datetime import datetime
 
@@ -157,9 +158,80 @@ def test_get_html_has_more_bookmarks(mock_handler, sample_translations):
 def test_build_export_html_document_includes_expected_wrapper():
     generated_at = datetime(2026, 6, 28, 12, 30, 0)
     html = build_export_html_document('<div>CONTENT</div>', total_count=3, generated_at=generated_at)
-
     assert '<title>Bookmarks Export</title>' in html
     assert '/static/export-page.css' in html
     assert 'Total: 3 bookmarks' in html
     assert '2026-06-28 12:30:00' in html
     assert '<div>CONTENT</div>' in html
+
+
+# --- JSON payload embedded in HTML attributes ---
+
+def _extract_bookmark_json(html, bookmark_id):
+    """Extracts and decodes the data-bookmark-json attribute of a rendered bookmark."""
+    import html as html_module
+    import json as json_module
+    import re
+
+    pattern = rf'data-bookmark-json="([^"]*)"'
+    matches = re.findall(pattern, html)
+    payloads = [json_module.loads(html_module.unescape(value)) for value in matches]
+    for payload in payloads:
+        if payload.get('id') == bookmark_id:
+            return payload
+    raise AssertionError(f"data-bookmark-json for id {bookmark_id} not found")
+
+
+def test_card_json_survives_quotes_and_backslashes(sample_translations):
+    """Titles with quotes and backslashes must not break JSON.parse on the client.
+
+    Regression: escaping backslashes for the HTML attribute turned \" into \\",
+    which terminated the JSON string early and left the Edit button dead.
+    """
+    bookmark = (
+        7,
+        'https://example.com/a',
+        'The "Best" C:\\ path',
+        'He said "hello" and left',
+        None,
+        'example.com',
+        '2026-01-01 10:00:00',
+        None,
+        None,
+        None,
+        json.dumps(['tag "one"']),
+        0,
+        0,
+    )
+
+    payload = _extract_bookmark_json(render_bookmark_card(bookmark, sample_translations), 7)
+
+    assert payload['title'] == 'The "Best" C:\\ path'
+    assert payload['description'] == 'He said "hello" and left'
+    assert payload['tags'] == ['tag "one"']
+
+
+def test_compact_json_survives_quotes_and_backslashes(sample_translations):
+    """Same regression check for the compact list view."""
+    bookmark = (
+        8,
+        'https://example.com/b',
+        'Quotes "here"',
+        'Backslash \\ and quote "',
+        None,
+        'example.com',
+        '2026-01-01 10:00:00',
+        None,
+        None,
+        None,
+        '[]',
+        1,
+        3,
+    )
+
+    payload = _extract_bookmark_json(render_bookmark_compact_item(bookmark, sample_translations), 8)
+
+    assert payload['title'] == 'Quotes "here"'
+    assert payload['description'] == 'Backslash \\ and quote "'
+    assert payload['is_read'] == 1
+    assert payload['rating'] == 3

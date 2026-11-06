@@ -120,3 +120,21 @@ def test_save_bookmark_integration(bot_instance, db_for_bot):
     assert saved_data[3] == "Integration Test Bookmark"
     assert saved_data[9] == 12345 # telegram_user_id
     assert saved_data[10] == 54321 # telegram_message_id
+
+
+def test_link_usage_placeholder_is_plain_text():
+    """Telegram parses reply text as HTML/Markdown: a `<token>` placeholder is stripped."""
+    from telegram_bot.bot import LINK_USAGE, UNLINKED_MESSAGE
+
+    assert LINK_USAGE == "/link TOKEN"
+    assert "<" not in LINK_USAGE and ">" not in LINK_USAGE
+    assert "<token>" not in UNLINKED_MESSAGE
+
+
+def test_bot_source_has_no_angle_bracket_placeholders():
+    """Guard against reintroducing placeholders that Telegram would silently remove."""
+    from pathlib import Path
+
+    bot_source = (Path(__file__).resolve().parents[1] / "telegram_bot" / "bot.py").read_text(encoding="utf-8")
+    assert "<token>" not in bot_source
+    assert "</token>" not in bot_source

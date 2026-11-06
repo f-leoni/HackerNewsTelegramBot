@@ -2,6 +2,7 @@
 Module for generating the web page HTML.
 """
 import json
+from html import escape as html_escape
 
 def get_login_page(self, error=None):
     """Generates the HTML for the login page."""
@@ -462,7 +463,10 @@ def render_bookmark_card(bookmark, translations):
         'id': id, 'url': url, 'title': title, 'description': description,
         'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read, 'tags': parsed_tags, 'rating': rating
     }, ensure_ascii=False)
-    bookmark_json_html = bookmark_data_json.replace("\\", "\\\\").replace("'", "&#39;").replace('"', '&quot;')
+    # Escape only for the HTML attribute. Escaping backslashes would corrupt the
+    # JSON escape sequences (e.g. \" inside a title) and break JSON.parse in the
+    # browser, leaving the Edit button unresponsive.
+    bookmark_json_html = html_escape(bookmark_data_json, quote=True)
 
     class_attr = f"bookmark-card {'read' if is_read else ''}".strip()
     read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
@@ -527,7 +531,8 @@ def render_bookmark_compact_item(bookmark, translations):
     bookmark_data_json = json.dumps({
         'id': id, 'url': url, 'title': title, 'description': _, 'image_url': image_url, 'comments_url': comments_url, 'is_read': is_read, 'tags': compact_tags, 'rating': rating
     }, ensure_ascii=False)
-    bookmark_json_html = bookmark_data_json.replace("\\", "\\\\").replace("'", "&#39;").replace('"', '&quot;')
+    # See render_bookmark_card: escape for the attribute only, never for JSON.
+    bookmark_json_html = html_escape(bookmark_data_json, quote=True)
 
     class_attr = f"compact-item {'read' if is_read else ''}".strip()
     read_button_title = translations.get("tooltip_mark_as_unread", "Mark as unread") if is_read else translations.get("tooltip_mark_as_read", "Mark as read")
@@ -820,9 +825,24 @@ def get_html(self, bookmarks, version="N/A", total_count=0, translations={}, sea
                     this.isOpen = true;
                 }},
 
-                openEdit: function(bookmarkDataString) {{
+                openEdit: function(bookmarkDataInput) {{
                     this.isEditing = true;
-                    const bookmarkData = JSON.parse(bookmarkDataString);
+                    // Accept both the raw JSON string from server-rendered buttons
+                    // and an already-parsed object from client-side re-renders.
+                    let bookmarkData;
+                    if (typeof bookmarkDataInput === 'string') {{
+                        try {{
+                            bookmarkData = JSON.parse(bookmarkDataInput);
+                        }} catch (e) {{
+                            console.error('Invalid bookmark data', e);
+                            return;
+                        }}
+                    }} else if (bookmarkDataInput && typeof bookmarkDataInput === 'object') {{
+                        bookmarkData = bookmarkDataInput;
+                    }} else {{
+                        console.error('Missing bookmark data');
+                        return;
+                    }}
                     // Normalize tags to a comma-separated string for editing
                     let tagsStr = '';
                     if (bookmarkData.tags) {{

@@ -76,7 +76,7 @@ function renderBookmarkCard(bookmark) {
             <div class="bookmark-actions">
                 <a href="${bookmark.url}" target="_blank" class="icon-btn" title="${translations.tooltip_open_link || 'Open link'}">${ICON_OPEN}</a>
                 <button class="icon-btn read" data-id="${bookmark.id}" title="${readButtonTitle}">${readButtonIcon}</button>
-                <button class="icon-btn edit" title="${translations.tooltip_edit || 'Edit'}" @click="$dispatch('open-edit-modal', JSON.parse(this.dataset.bookmark))" data-bookmark='${bookmarkJson}'>${ICON_EDIT}</button>
+                <button class="icon-btn edit" title="${translations.tooltip_edit || 'Edit'}" @click="$dispatch('open-edit-modal', this.dataset.bookmark)" data-bookmark='${bookmarkJson}'>${ICON_EDIT}</button>
                 <button class="icon-btn delete" data-id="${bookmark.id}" title="${translations.tooltip_delete || 'Delete'}">${ICON_DELETE}</button>
             </div>
 
@@ -127,7 +127,7 @@ function renderBookmarkCompactItem(bookmark) {
         </div>
         <div class="bookmark-actions">
             <button class="icon-btn read" data-id="${bookmark.id}" title="${readButtonTitle}">${readButtonIcon}</button>
-            <button class="icon-btn edit" title="${translations.tooltip_edit || 'Edit'}" @click="$dispatch('open-edit-modal', JSON.parse(this.dataset.bookmark))" data-bookmark='${bookmarkJson}'>${ICON_EDIT}</button>
+            <button class="icon-btn edit" title="${translations.tooltip_edit || 'Edit'}" @click="$dispatch('open-edit-modal', this.dataset.bookmark)" data-bookmark='${bookmarkJson}'>${ICON_EDIT}</button>
             <button class="icon-btn delete" data-id="${bookmark.id}" title="${translations.tooltip_delete || 'Delete'}">${ICON_DELETE}</button>
         </div>
     </div>`;

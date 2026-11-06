@@ -27,8 +27,9 @@ def main() -> int:
     if not any(values[key] for key in REQUIRED_ONE_OF):
         errors.append("Set BOT_TOKEN (bot account) or SESSION_STRING (user account).")
 
-    if values["SESSION_STRING"] and not (values["API_ID"] and values["API_HASH"]):
-        errors.append("SESSION_STRING requires both API_ID and API_HASH.")
+    # Pyrogram requires both values in every authentication mode.
+    if not (values["API_ID"] and values["API_HASH"]):
+        errors.append("API_ID and API_HASH are required (get them from my.telegram.org).")
 
     if errors:
         print()
