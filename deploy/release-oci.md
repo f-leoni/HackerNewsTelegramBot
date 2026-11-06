@@ -15,6 +15,18 @@ Non viene eseguito automaticamente e non modifica Caddy, DNS o firewall.
 - Caricare lo script di rilascio in `/home/ubuntu/release_oci.py`.
 - Verificare che il backup esterno sul NAS sia aggiornato.
 
+La cartella sorgente si costruisce in locale con:
+
+```powershell
+.\deploy\build_release.ps1 -Archive
+```
+
+Lo script copia i quattro componenti applicando le stesse esclusioni di
+`release_oci.py` (`.env`, sessioni, database, cache, certificati), verifica la
+presenza dei file obbligatori, verifica che non siano finiti segreti e stampa le
+versioni dichiarate dal codice. Con `-Archive` crea anche `hnbot-release.zip`
+con hash SHA256 per il trasferimento.
+
 Comando PowerShell per trasferire il solo script dalla root del workspace:
 
 ```powershell
