@@ -47,9 +47,18 @@ def create_backup(project, output, keep=14, config_paths=()):
         backup_database(project / "shared/db/bookmarks.db", staging / database)
         snapshots = [database]
         session = Path("app/telegram_bot/bookmark_bot_session.session")
-        if (project / "telegram_bot/bookmark_bot_session.session").is_file():
-            backup_database(project / "telegram_bot/bookmark_bot_session.session", staging / session)
-            snapshots.append(session)
+        # The bot may store the Pyrogram session in the legacy location or in one
+        # of the directories introduced with SESSION_DIR support.
+        session_candidates = (
+            project / "telegram_bot/bookmark_bot_session.session",
+            project / "telegram_bot/.sessions/bookmark_bot_session.session",
+            project / "session/bookmark_bot_session.session",
+        )
+        for candidate in session_candidates:
+            if candidate.is_file():
+                backup_database(candidate, staging / session)
+                snapshots.append(session)
+                break
 
         output.mkdir(parents=True, exist_ok=True, mode=0o750)
         with tempfile.NamedTemporaryFile(dir=output, prefix=".hnbot-", delete=False) as handle:

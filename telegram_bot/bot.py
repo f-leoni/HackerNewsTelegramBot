@@ -24,7 +24,7 @@ from shared.utils import get_article_metadata, generate_tags_llm
 import logging
 
 # Setup logging
-__version__ = "1.0"
+__version__ = "2.0.0"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

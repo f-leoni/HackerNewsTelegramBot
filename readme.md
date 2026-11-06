@@ -2,6 +2,8 @@
 
 A Telegram bot and a companion web server to save and manage bookmarks from HackerNews and other websites. The application is fully containerized using Docker for easy setup and deployment.
 
+**Versione:** webserver 3.0.0 · bot 2.0.0 · schema DB 2. Vedi [CHANGELOG.md](CHANGELOG.md).
+
 ## Features
 
 *   **Telegram Bot**: Save links directly from your "Saved Messages" or any private chat with the bot.

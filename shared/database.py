@@ -7,7 +7,7 @@ import sqlite3
 import logging
 from datetime import datetime
 
-__version__ = "1.0"
+__version__ = "2.0"
 logger = logging.getLogger(__name__)
 
 # Bumped whenever the physical schema changes in a way that needs migration.

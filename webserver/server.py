@@ -37,7 +37,7 @@ from .htmldata import (
     render_bookmarks_export,
     build_export_html_document,
 )
-__version__ = "2.0.5"
+__version__ = "3.0.0"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
